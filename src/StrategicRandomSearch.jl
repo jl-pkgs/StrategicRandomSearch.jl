@@ -11,45 +11,37 @@ export SRS
 include("OptimOutput.jl")
 
 # 保存迭代过程中的最优值 BstValueFE
-function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, s::Int, n_reps::Int, vectorized::Bool)
-  best_value = minimum(view(BestValue, s, :))
+function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Int, vectorized::Bool)
+  best_value = minimum(view(BestValue, num_iter, :))
   values_to_add = vectorized ? [best_value] : fill(best_value, n_reps)
   append!(BestValueFE, values_to_add)
 end
-function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, s::Int, n_reps::Vector{Int}, vectorized::Bool)
-  best_value = minimum(view(BestValue, s, :))
+function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Vector{Int}, vectorized::Bool)
+  best_value = minimum(view(BestValue, num_iter, :))
   values_to_add = vectorized ? fill(best_value, n_reps[1]) : fill(best_value, n_reps[2])
   append!(BestValueFE, values_to_add)
 end
 
 # 保存迭代过程中的最优参数 EachParFE
-function populate_each_par_fe!(EachParFE::Matrix{Float64}, EachPar::Matrix{Float64}, s::Int, n_reps::Int, vectorized::Bool)
-  each_par_slice = EachPar[:, s]
+function populate_each_par_fe!(EachParFE::Matrix{Float64}, EachPar::Matrix{Float64}, num_iter::Int, n_reps::Int, vectorized::Bool)
+  each_par_slice = EachPar[:, num_iter]
   values_to_add = vectorized ? each_par_slice : repeat(each_par_slice, 1, n_reps)
   EachParFE = hcat(EachParFE, values_to_add)
 end
 
-# 定义计算函数，分别针对矢量化和非矢量化场景
-function compute_y_vectorized!(y::Vector{Float64}, f::Function, x::Matrix{Float64},
-  fe::Int, feS::Int, N::Int; goal_multiplier::Int=1)
-  # 矢量化实现，直接操作矩阵乘法
-  y .= f(x') * goal_multiplier
-  fe += 1
-  feS += N
-  return y, fe, feS
-end
-
-function compute_y_non_vectorized!(y::Vector{Float64}, f::Function, x::Matrix{Float64},
-  fe::Int, feS::Int, N::Int; goal_multiplier::Int=1)
+function calculate_goal!(y::Vector{Float64}, f::Function, x::Matrix{Float64},
+  num_call::Int, feS::Int, N::Int)
   @inbounds for i in 1:N
-    y[i] = f(x[:, i]) * goal_multiplier
-    fe += 1
+    y[i] = f(x[:, i])
+    num_call += 1
   end
   feS += N
-  return y, fe, feS
+  return y, num_call, feS
 end
 
 """
+  SRS(f, lower, upper; maxn=1000, )
+
 ## Arguments
 - `f`     : The objective function to be optimized
 - `lower` : The lower bound of the parameter to be determined
@@ -61,22 +53,21 @@ end
 - `kw`    : Additional keyword arguments to be passed to `f`
 """
 function SRS(
-  f::Function, lower::Vector{Float64}, upper::Vector{Float64}, args...;
-  
-  maxn::Int=1000,
+  f::Function, lower::Vector{Float64}, upper::Vector{Float64}, args...; maxn::Int=1000,
   p::Int=3,
-  sp::Union{Nothing,Int}=nothing, 
+  sp::Union{Nothing,Int}=nothing,
   deps::Int=12,
   delta::Float64=0.01,
   Vectorization::Bool=false,
   MAX::Bool=false,
   OptimalValue::Float64=NaN,
-  ObjectiveLimit::Float64=NaN, 
+  ObjectiveLimit::Float64=NaN,
   eps::Int=4,
   DispProcess::Bool=false, verbose=true,
-  update_eps::Bool=true, ShortLambda::Float64=0.02, LongLambda::Float64=0.2,
-  InitialLt::Int=3, Lt::Int=2, 
-  seed::Int= 0, 
+  update_eps::Bool=true, 
+  λ_short::Float64=0.02, λ_long::Float64=0.2,
+  InitialLt::Int=3, Lt::Int=2,
+  seed::Int=0,
   kw...)
 
   Random.seed!(seed) # make the result reproducible
@@ -84,9 +75,7 @@ function SRS(
   fun(x) = f(x, args...; kw...)
   n = length(lower)
 
-  compute_y = Vectorization ? compute_y_vectorized! : compute_y_non_vectorized!
-
-  if isnothing(sp)
+  if isnothing(sp) 
     sp = p < 5 ? p : (p < 12 ? 5 : 12)
   end
 
@@ -94,9 +83,6 @@ function SRS(
   p1 = sp
   OV = OptimalValue
 
-  # 根据是否最小化或最大化调整A
-  goal_multiplier::Int = MAX == true ? -1 : 1
-  
   # 初始化参数
   n1 = 3 * n + 3
   m1 = Int(max(floor(Int, n1 * p / sp) + 1, 9))
@@ -106,10 +92,10 @@ function SRS(
   M = upper .- lower
   BE = copy(upper)
   BD = copy(lower)
-  fe = 0
+  num_call = 0
   feS = 0
   k = (upper .- lower) ./ (psize .- 1)
-  s = 0
+  num_iter = 0
   Index = 0
   MM = m1 * p
 
@@ -117,7 +103,7 @@ function SRS(
   x = (upper .+ lower) ./ 2 .+ ((upper .- lower) .* (rand(n, MM) .- 1) ./ 2)
   y = Vector{Float64}(undef, MM)
 
-  y, fe, feS = compute_y(y, fun, x, fe, feS, MM; goal_multiplier)
+  y, num_call, feS = calculate_goal!(y, fun, x, num_call, feS, MM)
 
   BestValueFE = minimum(y)
   EachParFE = x[:, argmin(y)]
@@ -138,7 +124,7 @@ function SRS(
 
   # 主循环
   while true
-    lambda, lt_val = (eps > neps + 2) ? (ShortLambda, copy(Lt)) : (LongLambda, copy(Lt))
+    lambda, lt_val = (eps > neps + 2) ? (λ_short, copy(Lt)) : (λ_long, copy(Lt))
     if sss == 0
       lt_val = InitialLt
     end
@@ -167,7 +153,7 @@ function SRS(
 
     MM = n1 * p
     y = Vector{Float64}(undef, MM)
-    y, fe, feS = compute_y(y, fun, x, fe, feS, MM; goal_multiplier)
+    y, num_call, feS = calculate_goal!(y, fun, x, num_call, feS, MM)
 
     for i in 1:p
       yp = copy(y[i:p:end])
@@ -181,37 +167,34 @@ function SRS(
 
     indexYb = argmax(y)
     Xb .= x[:, indexYb]
-    s += 1
+    num_iter += 1
 
     Index += 1
-    BestValue[s, :] .= yps
+    BestValue[num_iter, :] .= yps
     append!(BY, minimum(yps))
     indexX = sortperm(yps)
     sort!(yps)
-    EachPar[:, s] = Xp[:, indexX[1]]
+    EachPar[:, num_iter] = Xp[:, indexX[1]]
 
-    populate_best_value_fe!(BestValueFE, BestValue, s, n_reps, Vectorization)
-    populate_each_par_fe!(EachParFE, EachPar, s, n_reps, Vectorization)
+    populate_best_value_fe!(BestValueFE, BestValue, num_iter, n_reps, Vectorization)
+    populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps, Vectorization)
 
-    # s += 1
-
-    if DispProcess
-      println(goal_multiplier * minimum(BestValue[s, :]), "\tout")
-    end
+    # num_iter += 1
+    DispProcess && println(goal_multiplier * minimum(BestValue[num_iter, :]), "\tout")
 
     # println(OLindex && !isnothing(OV))
     if OLindex && !isnan(OV)
-      # println(minimum(BestValue[s, :]), "abcde")
-      if abs(OV * goal_multiplier - minimum(BestValue[s, :])) < abs(ObjectiveLimit)
+      # println(minimum(BestValue[num_iter, :]), "abcde")
+      if abs(OV * goal_multiplier - minimum(BestValue[num_iter, :])) < abs(ObjectiveLimit)
         break
       end
     end
 
     if Index > lt_val
-      if abs(minimum(log10.(Mbounds ./ M))) > deps || fe > maxn
+      if abs(minimum(log10.(Mbounds ./ M))) > deps || num_call > maxn
         break
       end
-      ineed = abs(minimum(BY[s-lt_val+1]) - minimum(BY[s]))
+      ineed = abs(minimum(BY[num_iter-lt_val+1]) - minimum(BY[num_iter]))
       if abs(log10(max(ineed, 10.0^(-eps - 1)))) ≥ eps
         sss = 1
         bb = minimum(Xp', dims=1)
@@ -243,7 +226,7 @@ function SRS(
         Index1 = 1
         BestY = zeros(Float64, n + 1, p1)
         BestY[1, :] .= yps[1:p1]
-        BX = EachPar[:, s]
+        BX = EachPar[:, num_iter]
         MM = m1 * p1
         y = Vector{Float64}(undef, MM)
 
@@ -265,7 +248,7 @@ function SRS(
           end
 
 
-          y, fe, feS = compute_y(y, fun, x, fe, feS, MM; goal_multiplier)
+          y, num_call, feS = calculate_goal!(y, fun, x, num_call, feS, MM)
           Index1 += 1
 
           for j = 1:p1
@@ -284,18 +267,16 @@ function SRS(
           end
         end
 
-        s += 1
-        BestValue[s, 1:p1] .= minimum(BestY[Index1-n:Index1, :], dims=1)'
-        append!(BY, minimum(BestValue[s, 1:p1]))
-        EachPar[:, s] = BX
+        num_iter += 1
+        BestValue[num_iter, 1:p1] .= minimum(BestY[Index1-n:Index1, :], dims=1)'
+        append!(BY, minimum(BestValue[num_iter, 1:p1]))
+        EachPar[:, num_iter] = BX
 
         n_reps1 = m1 * p1 * n
-        populate_best_value_fe!(BestValueFE, BestValue, s, [n_reps, n_reps1], Vectorization)
-        populate_each_par_fe!(EachParFE, EachPar, s, n_reps, Vectorization)
+        populate_best_value_fe!(BestValueFE, BestValue, num_iter, [n_reps, n_reps1], Vectorization)
+        populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps, Vectorization)
 
-        if DispProcess
-          println(goal_multiplier * minimum(BestValue[s, 1:p1]), "\tin")
-        end
+        DispProcess && println(goal_multiplier * minimum(BestValue[num_iter, 1:p1]), "\tin")
 
         Xp[:, 1:p1] .= BestX
         bb = minimum(Xp', dims=1)
@@ -347,7 +328,7 @@ function SRS(
         # 计算 y
         MM = m1 * p1
         y = Vector{Float64}(undef, MM)
-        y, fe, feS = compute_y(y, fun, x, fe, feS, MM; goal_multiplier)
+        y, num_call, feS = calculate_goal!(y, fun, x, num_call, feS, MM)
 
         # 更新 yps 和 x
         # println("ymin: ", minimum(y))
@@ -359,7 +340,7 @@ function SRS(
         # 对 yps 排序并更新
         yps, indexY = sort(y), sortperm(y)
         yps = yps[1:p]
-        xneed = abs(yps[1] - BY[s])
+        xneed = abs(yps[1] - BY[num_iter])
         # println("yps: ", yps[1])
 
         # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
@@ -387,13 +368,12 @@ function SRS(
         lower[heihei2] .= max.(nx2[heihei2] .- k[heihei2], BD[heihei2])
 
         n_reps2 = m1 * p1
-        populate_best_value_fe!(BestValueFE, BestValue, s, n_reps2, Vectorization)
-        populate_each_par_fe!(EachParFE, EachPar, s, n_reps2, Vectorization)
+        populate_best_value_fe!(BestValueFE, BestValue, num_iter, n_reps2, Vectorization)
+        populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps2, Vectorization)
       end
     end
   end
-
-  return OptimOutput(BestValueFE, EachParFE, BY, EachPar, fe, s; verbose)
+  return OptimOutput(BestValueFE, EachParFE, BY, EachPar, num_call, num_iter; verbose)
 end
 
 end
