@@ -1,11 +1,9 @@
-# Strategic Random Search in Julia
+# `StrategicRandomSearch.jl`
+
+The Strategic Random Search (SRS) —— A New Global Optimization Algorithm in Julia
 
 [![CI](https://github.com/jl-pkgs/StrategicRandomSearch.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/jl-pkgs/StrategicRandomSearch.jl/actions/workflows/CI.yml)
 [![Codecov](https://codecov.io/gh/jl-pkgs/StrategicRandomSearch.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/jl-pkgs/StrategicRandomSearch.jl)
-
-
-The Strategic Random Search (SRS) —— A New Global Optimization Algorithm  
-
 
 ## Usage
 
