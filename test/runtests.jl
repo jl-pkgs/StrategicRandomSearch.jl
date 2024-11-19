@@ -49,7 +49,6 @@ result = SRS(Zakharov, n, boundsbegin, boundsend,
   Vectorization=true, DispValue=true, MAX=false,
   OptimalValue=1.0, ObjectiveLimit=1e-20)
 
-
 @testset "SRS" begin
   x = 1
   @test x == 1
