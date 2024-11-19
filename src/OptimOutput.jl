@@ -1,6 +1,3 @@
-export OptimOutput
-
-
 @with_kw mutable struct OptimOutput
   num_iter::Int = 0                   # 迭代次数
   num_call::Int = 0                   # 目标函数调用次数
