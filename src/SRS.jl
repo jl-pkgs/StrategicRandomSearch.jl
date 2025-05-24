@@ -1,20 +1,20 @@
 # 保存迭代过程中的最优值 BstValueFE
-function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Int, vectorized::Bool)
+function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Int)
   fs = minimum(view(BestValue, num_iter, :)) # fevals
-  values_to_add = vectorized ? [fs] : fill(fs, n_reps)
+  values_to_add = fill(fs, n_reps)
   append!(BestValueFE, values_to_add)
 end
 
-function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Vector{Int}, vectorized::Bool)
+function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Vector{Int})
   fs = minimum(view(BestValue, num_iter, :))
-  values_to_add = vectorized ? fill(fs, n_reps[1]) : fill(fs, n_reps[2])
+  values_to_add = fill(fs, n_reps[2])
   append!(BestValueFE, values_to_add)
 end
 
 # 保存迭代过程中的最优参数 EachParFE
-function populate_each_par_fe!(EachParFE::Matrix{Float64}, EachPar::Matrix{Float64}, num_iter::Int, n_reps::Int, vectorized::Bool)
+function populate_each_par_fe!(EachParFE::Matrix{Float64}, EachPar::Matrix{Float64}, num_iter::Int, n_reps::Int)
   xs = EachPar[:, num_iter]
-  values_to_add = vectorized ? xs : repeat(xs, 1, n_reps)
+  values_to_add = repeat(xs, 1, n_reps)
   EachParFE = hcat(EachParFE, values_to_add)
 end
 
@@ -51,7 +51,6 @@ function SRS(
   sp::Union{Nothing,Int}=nothing,
   deps::Int=12,
   delta::Float64=0.01,
-  Vectorization::Bool=false,
   OptimalValue::Float64=NaN,
   ObjectiveLimit::Float64=NaN,
   eps::Int=4,
@@ -133,6 +132,7 @@ function SRS(
       xx1 = XPi .+ lam_Mbounds_IN
       xx2 = XPi .- lam_Mbounds_IN
       xx3 = XPi .- lam_Mbounds .* r1
+      
       xb1 = (Xp[:, i] .+ Xb) ./ 2
       xb2 = 2 * Xb .- Xp[:, i]
       xb3 = 2 * Xp[:, i] .- Xb
@@ -167,8 +167,8 @@ function SRS(
     sort!(yps)
     EachPar[:, num_iter] = Xp[:, indexX[1]]
 
-    populate_best_value_fe!(BestValueFE, BestValue, num_iter, n_reps, Vectorization)
-    populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps, Vectorization)
+    populate_best_value_fe!(BestValueFE, BestValue, num_iter, n_reps)
+    populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps)
 
     # num_iter += 1
     DispProcess && println(goal_multiplier * minimum(BestValue[num_iter, :]), "\tout")
@@ -222,17 +222,18 @@ function SRS(
         for i = 1:n
           for j = 1:p1
             # 更新 x 矩阵的部分
-            xneed = LL[Pi[i, j], 1:maxpsize-1] + (k[Pi[i, j]]*rand(1, psize[Pi[i, j]] - 1))[:]
-            x[Pi[i, j], (j-1)*psize[Pi[i, j]]+2:j*psize[Pi[i, j]]] .= xneed
-            x[Pi[i, j], (j-1)*psize[Pi[i, j]]+1] = x[Pi[i, j], 1] + k[Pi[i, j]] * (2 * rand() - 1)
+            _i = Pi[i, j]
+            xneed = LL[_i, 1:maxpsize-1] + (k[_i]*rand(1, psize[_i] - 1))[:]
+            x[_i, (j-1)*psize[_i]+2:j*psize[_i]] .= xneed
+            x[_i, (j-1)*psize[_i]+1] = x[_i, 1] + k[_i] * (2 * rand() - 1)
 
             # 处理边界情况
-            if x[Pi[i, j], (j-1)*psize[Pi[i, j]]+1] < lower[Pi[i, j]]
-              x[Pi[i, j], (j-1)*psize[Pi[i, j]]+1] =
-                lower[Pi[i, j]] + k[Pi[i, j]] * rand()
-            elseif x[Pi[i, j], (j-1)*psize[Pi[i, j]]+1] > upper[Pi[i, j]]
-              x[Pi[i, j], (j-1)*psize[Pi[i, j]]+1] =
-                upper[Pi[i, j]] - k[Pi[i, j]] * rand()
+            if x[_i, (j-1)*psize[_i]+1] < lower[_i]
+              x[_i, (j-1)*psize[_i]+1] =
+                lower[_i] + k[_i] * rand()
+            elseif x[_i, (j-1)*psize[_i]+1] > upper[_i]
+              x[_i, (j-1)*psize[_i]+1] =
+                upper[_i] - k[_i] * rand()
             end
           end
 
@@ -240,17 +241,18 @@ function SRS(
           Index1 += 1
 
           for j = 1:p1
-            nash, index = findmin(y[(j-1)*psize[Pi[i, j]]+1:j*psize[Pi[i, j]]])
+            _i = Pi[i, j]
+            nash, index = findmin(y[(j-1)*psize[_i]+1:j*psize[_i]])
             BestY[Index1, j] = nash
 
-            x[Pi[i, j], (j-1)*psize[Pi[i, j]]+1:j*psize[Pi[i, j]]] .=
-              x[Pi[i, j], (j-1)*psize[Pi[i, j]]+index] * ones(Float64, maxpsize)
+            x[_i, (j-1)*psize[_i]+1:j*psize[_i]] .=
+              x[_i, (j-1)*psize[_i]+index] * ones(Float64, maxpsize)
 
             if nash == minimum(BestY[1:Index1, j])
-              BestX[:, j] .= x[:, (j-1)*psize[Pi[i, j]]+index]
+              BestX[:, j] .= x[:, (j-1)*psize[_i]+index]
             end
             if nash == minimum([minimum(BestY[1:Index1-1, :]), minimum(BestY[Index1, 1:j])])
-              BX .= x[:, (j-1)*psize[Pi[i, j]]+index]
+              BX .= x[:, (j-1)*psize[_i]+index]
             end
           end
         end
@@ -261,8 +263,8 @@ function SRS(
         EachPar[:, num_iter] = BX
 
         n_reps1 = m1 * p1 * n
-        populate_best_value_fe!(BestValueFE, BestValue, num_iter, [n_reps, n_reps1], Vectorization)
-        populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps, Vectorization)
+        populate_best_value_fe!(BestValueFE, BestValue, num_iter, [n_reps, n_reps1])
+        populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps)
 
         DispProcess && println(goal_multiplier * minimum(BestValue[num_iter, 1:p1]), "\tin")
 
@@ -319,17 +321,14 @@ function SRS(
         num_call, feS = calculate_goal!(y, fun, x, num_call, feS, MM)
 
         # 更新 yps 和 x
-        # println("ymin: ", minimum(y))
         yps[1:p1] .= minimum(BestY, dims=1)'
         y = vcat(y, yps)
-        # println(yps)
         x = hcat(x, Xp)
 
         # 对 yps 排序并更新
         yps, indexY = sort(y), sortperm(y)
         yps = yps[1:p]
         xneed = abs(yps[1] - BY[num_iter])
-        # println("yps: ", yps[1])
 
         # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
         # 检查是否需要更新 eps
@@ -356,8 +355,8 @@ function SRS(
         lower[heihei2] .= max.(nx2[heihei2] .- k[heihei2], BD[heihei2])
 
         n_reps2 = m1 * p1
-        populate_best_value_fe!(BestValueFE, BestValue, num_iter, n_reps2, Vectorization)
-        populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps2, Vectorization)
+        populate_best_value_fe!(BestValueFE, BestValue, num_iter, n_reps2)
+        populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps2)
       end
     end
   end
