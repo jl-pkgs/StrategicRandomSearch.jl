@@ -1,37 +1,3 @@
-# 保存迭代过程中的最优值 BstValueFE
-function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Int)
-  fs = minimum(view(BestValue, num_iter, :)) # fevals
-  values_to_add = fill(fs, n_reps)
-  append!(BestValueFE, values_to_add)
-end
-
-function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Vector{Int})
-  fs = minimum(view(BestValue, num_iter, :))
-  values_to_add = fill(fs, n_reps[2])
-  append!(BestValueFE, values_to_add)
-end
-
-# 保存迭代过程中的最优参数 EachParFE
-function populate_each_par_fe!(EachParFE::Matrix{Float64}, EachPar::Matrix{Float64}, num_iter::Int, n_reps::Int)
-  xs = EachPar[:, num_iter]
-  values_to_add = repeat(xs, 1, n_reps)
-  EachParFE = hcat(EachParFE, values_to_add)
-end
-
-
-# y是修改地址，无需返回
-function calculate_goal!(y::Vector{Float64}, f::Function, x::Matrix{Float64},
-  num_call::Int, feS::Int, N::Int)
-  @inbounds for i in 1:N
-    y[i] = f(x[:, i])
-    num_call += 1
-  end
-  feS += N
-  return num_call, feS
-end
-
-
-
 """
   SRS(f, lower, upper; maxn=1000, )
 
@@ -44,10 +10,12 @@ end
 ## Keyword Arguments
 - `maxn`  : The maximum number of iterations
 - `kw`    : Additional keyword arguments to be passed to `f`
+
+- `p`: 参数翻多少倍
 """
 function SRS(
   f::Function, lower::Vector{Float64}, upper::Vector{Float64}, args...; maxn::Int=1000,
-  p::Int=3,
+  n_candidate::Int=3,
   sp::Union{Nothing,Int}=nothing,
   deps::Int=12,
   delta::Float64=0.01,
@@ -60,117 +28,88 @@ function SRS(
   InitialLt::Int=3, Lt::Int=2,
   seed::Int=0,
   kw...)
-
   Random.seed!(seed) # make the result reproducible
 
   fun(x) = f(x, args...; kw...)
-  n = length(lower)
-
   guess_sp(p) = p < 5 ? p : (p < 12 ? 5 : 12)
-  isnothing(sp) && (sp = guess_sp(p))
+  isnothing(sp) && (sp = guess_sp(n_candidate))
 
   OLindex = !isnan(ObjectiveLimit)
   p1 = sp
   OV = OptimalValue
 
   # 初始化参数
-  n1 = 3 * n + 3
-  m1 = Int(max(floor(Int, n1 * p / sp) + 1, 9))
+  npar = length(lower)
+  n_ensemble = 3 * npar + 3
+  n_reps = n_ensemble * n_candidate # 总参数，每次循环，总参数个数
+
+  m1 = Int(max(floor(Int, n_ensemble * n_candidate / sp) + 1, 9))
   # popsize = Int(m1 * sp * ones(Int, n, 1))
-  psize = m1 * ones(Int, n, 1)
+  psize = m1 * ones(Int, npar, 1)
   Mbounds = upper .- lower
+
+  ## 静态变量
   M = upper .- lower
   BE = copy(upper)
   BD = copy(lower)
-  num_call = 0
-  feS = 0
-  k = (upper .- lower) ./ (psize .- 1)
-  num_iter = 0
+  Bb = repeat(BD, 1, n_ensemble)
+  Be = repeat(BE, 1, n_ensemble)
+
+  k = M ./ (psize .- 1)
   Index = 0
-  MM = m1 * p
+  MM = m1 * n_candidate
+
+  num_call = 0
+  num_iter = 0
+  feS = 0
 
   # 初始化解空间
-  x = (upper .+ lower) ./ 2 .+ ((upper .- lower) .* (rand(n, MM) .- 1) ./ 2)
+  x = (upper .+ lower) ./ 2 .+ (M .* (rand(npar, MM) .- 1) ./ 2)
   y = Vector{Float64}(undef, MM)
 
-  num_call, feS = calculate_goal!(y, fun, x, num_call, feS, MM)
+  num_call, feS = calculate_goal!(y, fun, x, num_call, feS)
 
-  BestValueFE = minimum(y)
-  EachParFE = x[:, argmin(y)]
+  ## 这是怎么回事？
+  yps, Xp, Xb = select_theta(y, x; n_candidate)
+  # BestValueFE = yps[1]
+  # EachParFE = Xp[:, 1]
 
-  yps, indexY = sort(y), sortperm(y)
-  yps = yps[1:p]
-  Xp = x[:, indexY[1:p]]
-  Xb = x[:, indexY[end]]
-
-  EachPar = zeros(Float64, n, maxn)
-  BestValue = zeros(Float64, maxn, p)
+  EachPar = zeros(Float64, npar, maxn)
+  BestValue = zeros(Float64, maxn, n_candidate) # 前n个作为候选
   neps = eps
   sss = 0
-  n_reps = n1 * p
+
   BY = Float64[]
-  BestValueFE = Float64[]
-  EachParFE = Matrix{Float64}(undef, size(EachPar, 1), n_reps)
+  _feval_iters = Float64[]
+  _x_iters = []
+
+  X1 = zeros(Float64, npar, n_reps)
 
   # 主循环
   while true
     lambda, lt_val = (eps > neps + 2) ? (λ_short, copy(Lt)) : (λ_long, copy(Lt))
-    if sss == 0
-      lt_val = InitialLt
-    end
+    sss == 0 && (lt_val = InitialLt)
 
-    x = zeros(Float64, n, n_reps)
-    Bb = repeat(BD, 1, n1)
-    Be = repeat(BE, 1, n1)
+    search_init_X!(X1, Xp, Xb, n_candidate, n_reps, lambda, Mbounds, Bb, Be)
 
-    lam_Mbounds = lambda * Mbounds
-    lam_Mbounds_IN = lam_Mbounds .* Diagonal(ones(n))
-    # 在搜索过程中更新解
-    for i in 1:p
-      r1 = 2 .* rand(Bool, n, n) .- 1
-      XPi = repeat(Xp[:, i], 1, n)
-      xx1 = XPi .+ lam_Mbounds_IN
-      xx2 = XPi .- lam_Mbounds_IN
-      xx3 = XPi .- lam_Mbounds .* r1
-      
-      xb1 = (Xp[:, i] .+ Xb) ./ 2
-      xb2 = 2 * Xb .- Xp[:, i]
-      xb3 = 2 * Xp[:, i] .- Xb
-      xx = hcat(xx1, xx2, xb1, xb2, xb3, xx3)
+    y = Vector{Float64}(undef, n_reps)
+    num_call, feS = calculate_goal!(y, fun, X1, num_call, feS)
+    update_best_theta!(yps, Xp, Xb, y, X1, n_candidate) # update yps, Xp, Xb
 
-      xx .= clamp.(xx, Bb, Be)
-      x[:, i:p:n1*p] .= xx
-    end
-
-    MM = n1 * p
-    y = Vector{Float64}(undef, MM)
-    num_call, feS = calculate_goal!(y, fun, x, num_call, feS, MM)
-
-    for i in 1:p
-      yp = copy(y[i:p:end])
-      yp = vcat(yp, yps[i])
-      indexY = argmin(yp)
-      # println(yp[indexY])
-      yps[i] = copy(yp[indexY])
-      xp = hcat(x[:, i:p:end], Xp[:, i])
-      Xp[:, i] .= xp[:, indexY]
-    end
-
-    indexYb = argmax(y)
-    Xb .= x[:, indexYb]
     num_iter += 1
-
     Index += 1
-    BestValue[num_iter, :] .= yps
-    append!(BY, minimum(yps))
+
+    BestValue[num_iter, :] .= yps # 这里近记录了一次表现最好的
+
     indexX = sortperm(yps)
     sort!(yps)
-    EachPar[:, num_iter] = Xp[:, indexX[1]]
 
-    populate_best_value_fe!(BestValueFE, BestValue, num_iter, n_reps)
-    populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps)
+    append!(BY, minimum(yps)) # BY 记录的是 最佳
+    EachPar[:, num_iter] = Xp[:, indexX[1]] # 做优的一个
 
-    # num_iter += 1
+    populate_best_value_fe!(_feval_iters, BestValue, num_iter, n_reps)
+    populate_each_par_fe!(_x_iters, EachPar, num_iter, n_reps)
+
     DispProcess && println(goal_multiplier * minimum(BestValue[num_iter, :]), "\tout")
 
     if OLindex && !isnan(OV)
@@ -188,83 +127,33 @@ function SRS(
         sss = 1
         bb = minimum(Xp', dims=1)
         be = maximum(Xp', dims=1)
-        lower .= max.(min.(lower, bb[:] .- k[:]), BD)
+        lower .= max.(min.(lower, bb[:] .- k[:]), BD) # lower and upper are updated
         upper .= min.(max.(upper, be[:] .+ k[:]), BE)
-        k .= (upper .- lower) ./ (psize .- 1)
         Mbounds .= upper .- lower
-        x = zeros(n, m1 * sp)
+        k .= Mbounds ./ (psize .- 1)
         Xp1 = Xp[:, indexX[1:sp]]
         # println(Mbounds)
-
+        
         BestX = copy(Xp1)
-        maxpsize = maximum(psize)
-        for i in 1:p1
-          x[:, (i-1)*maxpsize+1:i*maxpsize] .= repeat(Xp1[:, i], 1, maxpsize)
-        end
+        x = zeros(npar, m1 * sp)
 
-        Pi = zeros(Int, n, p1)
-        for i = 1:p1
-          Pi[:, i] .= randperm(n)
-        end
-
-        LL = zeros(Float64, n, maxpsize)
-        for i in 1:n  # 遍历 n 行
-          LL[i, :] .= lower[i] .+ k[i] .* (0:maxpsize-1)  # 填充每行
-        end
-
-        Index1 = 1
-        BestY = zeros(Float64, n + 1, p1)
+        BestY = zeros(Float64, npar + 1, p1)
         BestY[1, :] .= yps[1:p1]
+        
         BX = EachPar[:, num_iter]
-        MM = m1 * p1
-        y = Vector{Float64}(undef, MM)
 
-        for i = 1:n
-          for j = 1:p1
-            # 更新 x 矩阵的部分
-            _i = Pi[i, j]
-            xneed = LL[_i, 1:maxpsize-1] + (k[_i]*rand(1, psize[_i] - 1))[:]
-            x[_i, (j-1)*psize[_i]+2:j*psize[_i]] .= xneed
-            x[_i, (j-1)*psize[_i]+1] = x[_i, 1] + k[_i] * (2 * rand() - 1)
-
-            # 处理边界情况
-            if x[_i, (j-1)*psize[_i]+1] < lower[_i]
-              x[_i, (j-1)*psize[_i]+1] =
-                lower[_i] + k[_i] * rand()
-            elseif x[_i, (j-1)*psize[_i]+1] > upper[_i]
-              x[_i, (j-1)*psize[_i]+1] =
-                upper[_i] - k[_i] * rand()
-            end
-          end
-
-          num_call, feS = calculate_goal!(y, fun, x, num_call, feS, MM)
-          Index1 += 1
-
-          for j = 1:p1
-            _i = Pi[i, j]
-            nash, index = findmin(y[(j-1)*psize[_i]+1:j*psize[_i]])
-            BestY[Index1, j] = nash
-
-            x[_i, (j-1)*psize[_i]+1:j*psize[_i]] .=
-              x[_i, (j-1)*psize[_i]+index] * ones(Float64, maxpsize)
-
-            if nash == minimum(BestY[1:Index1, j])
-              BestX[:, j] .= x[:, (j-1)*psize[_i]+index]
-            end
-            if nash == minimum([minimum(BestY[1:Index1-1, :]), minimum(BestY[Index1, 1:j])])
-              BX .= x[:, (j-1)*psize[_i]+index]
-            end
-          end
-        end
-
+        num_call, feS, Index1 = perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, psize, p1, m1,
+           fun, num_call, feS)
+          
         num_iter += 1
-        BestValue[num_iter, 1:p1] .= minimum(BestY[Index1-n:Index1, :], dims=1)'
+        BestValue[num_iter, 1:p1] .= minimum(BestY[Index1-npar:Index1, :], dims=1)'
+
         append!(BY, minimum(BestValue[num_iter, 1:p1]))
         EachPar[:, num_iter] = BX
 
-        n_reps1 = m1 * p1 * n
-        populate_best_value_fe!(BestValueFE, BestValue, num_iter, [n_reps, n_reps1])
-        populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps)
+        n_reps1 = m1 * p1 * npar
+        populate_best_value_fe!(_feval_iters, BestValue, num_iter, [n_reps, n_reps1])
+        populate_each_par_fe!(_x_iters, EachPar, num_iter, n_reps)
 
         DispProcess && println(goal_multiplier * minimum(BestValue[num_iter, 1:p1]), "\tin")
 
@@ -277,48 +166,17 @@ function SRS(
         upper .= min.(upper, be[:] .+ delta_Mbounds)
         k .= (upper .- lower) ./ (psize .- 1)
 
-        pp = m1
-        x = zeros(n, m1 * p1)
-
-        for j = 1:p1
-          ra1 = 1:p1         # 创建 0 到 p1-1 的数组
-          ra1 = collect(ra1) # 将 ra1 转换为可变的数组类型 (Vector)
-          shuffle!(ra1)      # 打乱 ra1 数组
-          ra1 = Int64.(ra1)  # 将 ra1 转换为 Int64 类型
-
-          ra = Int64.([mod(j, p1 + 1), mod(j + 1, p1 + 1)])  # 计算 ra 数组
-          if ra[2] == 0
-            ra .= Int64.([j, 1]) # TODO: 这会导致额外内存开销
-          end
-
-          xx = min.(Xp[:, j] .- lower, upper .- Xp[:, j]) ./ 4
-          xxx = randn(n, pp - 9) .* xx
-
-          # 更新 x 数组的某些列
-          x[:, (j-1)*pp+1:j*pp-9] .= repeat(Xp[:, j], 1, pp - 9) .+ xxx
-
-          x[:, j*pp-8] .= Xp[:, ra1[3]] .- Xp[:, ra1[1]] .+ Xp[:, ra1[2]]
-          x[:, j*pp-7] .= (2 * Xp[:, ra1[1]] .- Xp[:, ra1[3]] .- Xp[:, ra1[2]]) / 2
-
-          x[:, j*pp-6] .= Xb .- (Xp[:, ra[2]] .+ Xp[:, ra[1]]) / 2
-          x[:, j*pp-5] .= Xp[:, ra[2]] .- Xb .+ Xp[:, ra[1]]
-          x[:, j*pp-4] .= x[:, j*pp-5] .- (Xp[:, ra[2]] .- 2 * Xb .+ Xp[:, ra[1]]) / 2
-          x[:, j*pp-3] .= Xb .+ (Xp[:, ra[2]] .- 2 * Xb .+ Xp[:, ra[1]]) / 4
-
-          x[:, j*pp-2] .= (Xp[:, j] .+ Xb) / 2
-          x[:, j*pp-1] .= 2 * Xb .- Xp[:, j]
-          x[:, j*pp-0] .= 2 * Xp[:, j] .- Xb
-        end
+        perform_secondary_search!(x, Xp, Xb, lower, upper, m1, p1)
 
         # 生成随机数 N
-        N = (BE .- BD) .* rand(n, m1 * p1) .+ BD
+        N = (BE .- BD) .* rand(npar, m1 * p1) .+ BD
         x[x.<BD] .= N[x.<BD]
         x[x.>BE] .= N[x.>BE]
 
         # 计算 y
         MM = m1 * p1
         y = Vector{Float64}(undef, MM)
-        num_call, feS = calculate_goal!(y, fun, x, num_call, feS, MM)
+        num_call, feS = calculate_goal!(y, fun, x, num_call, feS)
 
         # 更新 yps 和 x
         yps[1:p1] .= minimum(BestY, dims=1)'
@@ -327,7 +185,7 @@ function SRS(
 
         # 对 yps 排序并更新
         yps, indexY = sort(y), sortperm(y)
-        yps = yps[1:p]
+        yps = yps[1:n_candidate]
         xneed = abs(yps[1] - BY[num_iter])
 
         # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
@@ -336,14 +194,14 @@ function SRS(
           eps += 1
         end
 
-        Xp = x[:, indexY[1:p]]
+        Xp = x[:, indexY[1:n_candidate]]
         Xb = x[:, indexY[end]]
-        heihei1 = falses(n)
-        heihei2 = falses(n)
+        heihei1 = falses(npar)
+        heihei2 = falses(npar)
         nx1 = copy(BE)
         nx2 = copy(BD)
 
-        for i = 1:p
+        for i = 1:n_candidate
           nx = Xp[:, i]
           heihei1 .= heihei1 .| (nx .>= BE)
           heihei2 .= heihei2 .| (nx .<= BD)
@@ -355,11 +213,10 @@ function SRS(
         lower[heihei2] .= max.(nx2[heihei2] .- k[heihei2], BD[heihei2])
 
         n_reps2 = m1 * p1
-        populate_best_value_fe!(BestValueFE, BestValue, num_iter, n_reps2)
-        populate_each_par_fe!(EachParFE, EachPar, num_iter, n_reps2)
+        populate_best_value_fe!(_feval_iters, BestValue, num_iter, n_reps2)
+        populate_each_par_fe!(_x_iters, EachPar, num_iter, n_reps2)
       end
     end
   end
-
-  return OptimOutput(BestValueFE, EachParFE, BY, EachPar, num_call, num_iter; verbose)
+  return OptimOutput(_feval_iters, _x_iters, BY, EachPar, num_call, num_iter; verbose)
 end
