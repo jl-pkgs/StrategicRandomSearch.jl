@@ -60,24 +60,24 @@ OptimOutput
 
 **Table 1.** SRS algorithm parameters
 
-| Name             | Type  | Default | Description                                                                                                                                              |
-| ---------------- | ----- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `p`              | int   | 3       | p is the key parameter, and the value is generally 3-20, which needs to be given according to the specific situation                                     |
-| `deps`           | float | 12      | (0, inf), key parameter for adjusting the precision, the larger the value, the higher the precision and the longer the time                              |
-| `delta`          | float | 0.01    | (0, 0.5), key parameter for adjusting the precision, the larger the value, the higher the precision and the longer the time                              |
-| `Vectorization`  | bool  | false   | Whether the objective function satisfies the vectorization condition                                                                                     |
-| `num`            | int   | 1000    | if Vectorization=True: num=1000 else: num=10000 (defult).                                                                                                |
-|                  |       | 10000   | The key parameter, representing the maximum number of times the target function is called. When testing, the accuracy can be improved by increasing num. |
-| `MAX`            | bool  | true    | Whether to find the maximum value of the objective function.                                                                                             |
-| `OptimalValue`   | float | None    | The optimal value of the objective function.                                                                                                             |
-| `ObjectiveLimit` | float | None    | When the optimal value is known, the algorithm terminates                                                                                                |
-|                  |       |         | within `ObjectiveLimit` of the optimal value.                                                                                                            |
-| `eps`            | Int   | 4       | (0, +inf), it is not critical, and adjustment is not recommended.                                                                                        |
-| `update_eps`     | bool  | true    | Whether or not to update eps to do refined search parameters. Generally, it can be “false” for model parameter calibration.                              |
-| `ShortLambda`    | float | 0.02    | (0, 0.1), not critical, and adjustment is not recommended.                                                                                               |
-| `LongLambda`     | float | 0.2     | (0.1, 1), not critical, and adjustment is not recommended.                                                                                               |
-| `InitialLt`      | int   | 3       | (0, 10), not critical, and adjustment is not recommended.                                                                                                |
-| `Lt`             | int   | 2       | (0, 10), not critical, and adjustment is not recommended.                                                                                                |
+| Name             | Type  | Default | Description                                                                                                                                                 |
+| ---------------- | ----- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `p`              | int   | 3       | p is the key parameter, and the value is generally 3-20, which needs to be given according to the specific situation                                        |
+| `deps`           | float | 12      | (0, inf), key parameter for adjusting the precision, the larger the value, the higher the precision and the longer the time                                 |
+| `delta`          | float | 0.01    | (0, 0.5), key parameter for adjusting the precision, the larger the value, the higher the precision and the longer the time                                 |
+| `Vectorization`  | bool  | false   | Whether the objective function satisfies the vectorization condition                                                                                        |
+| `num`            | int   | 1000    | if Vectorization=True: num=1000 else: num=10000 (defult).                                                                                                   |
+|                  |       | 10000   | The key parameter, representing the nanmaximum number of times the target function is called. When testing, the accuracy can be improved by increasing num. |
+| `MAX`            | bool  | true    | Whether to find the nanmaximum value of the objective function.                                                                                             |
+| `OptimalValue`   | float | None    | The optimal value of the objective function.                                                                                                                |
+| `ObjectiveLimit` | float | None    | When the optimal value is known, the algorithm terminates                                                                                                   |
+|                  |       |         | within `ObjectiveLimit` of the optimal value.                                                                                                               |
+| `eps`            | Int   | 4       | (0, +inf), it is not critical, and adjustment is not recommended.                                                                                           |
+| `update_eps`     | bool  | true    | Whether or not to update eps to do refined search parameters. Generally, it can be “false” for model parameter calibration.                                 |
+| `ShortLambda`    | float | 0.02    | (0, 0.1), not critical, and adjustment is not recommended.                                                                                                  |
+| `LongLambda`     | float | 0.2     | (0.1, 1), not critical, and adjustment is not recommended.                                                                                                  |
+| `InitialLt`      | int   | 3       | (0, 10), not critical, and adjustment is not recommended.                                                                                                   |
+| `Lt`             | int   | 2       | (0, 10), not critical, and adjustment is not recommended.                                                                                                   |
 
 ## References
 

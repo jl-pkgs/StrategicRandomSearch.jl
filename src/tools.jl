@@ -6,7 +6,6 @@ function calculate_goal!(y::Vector{Float64}, f::Function, x::Matrix{Float64},
   @inbounds @threads for i in 1:N
     y[i] = f(x[:, i])
   end
-  
   num_call += N
   feS += N
   return num_call, feS
@@ -15,13 +14,13 @@ end
 
 # 保存迭代过程中的最优值 BstValueFE
 function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Int)
-  fs = minimum(@view BestValue[num_iter, :])
+  fs = nanminimum(@view BestValue[num_iter, :])
   append!(BestValueFE, fs)
 end
 
 function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Vector{Int})
-  # fs = minimum(view(BestValue, num_iter, :))
-  fs = minimum(@view BestValue[num_iter, :])
+  # fs = nanminimum(view(BestValue, num_iter, :))
+  fs = nanminimum(@view BestValue[num_iter, :])
   # values_to_add = fill(fs, n_reps[2])
   append!(BestValueFE, fs)
 end
@@ -96,7 +95,7 @@ end
 function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, psize, p1, m1, fun, num_call, feS)
   npar = length(lower)
 
-  maxpsize = maximum(psize)
+  maxpsize = nanmaximum(psize)
   for i in 1:p1
     x[:, (i-1)*maxpsize+1:i*maxpsize] .= repeat(Xp1[:, i], 1, maxpsize)
   end
@@ -146,17 +145,17 @@ function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, psize,
       x[_i, (j-1)*psize[_i]+1:j*psize[_i]] .=
         x[_i, (j-1)*psize[_i]+index] * ones(Float64, maxpsize)
 
-      if nash == minimum(BestY[1:Index1, j])
+      if nash == nanminimum(BestY[1:Index1, j])
         BestX[:, j] .= x[:, (j-1)*psize[_i]+index]
       end
-      if nash == minimum([minimum(BestY[1:Index1-1, :]), minimum(BestY[Index1, 1:j])])
+      if nash == nanminimum([nanminimum(BestY[1:Index1-1, :]), nanminimum(BestY[Index1, 1:j])])
         BX .= x[:, (j-1)*psize[_i]+index]
       end
     end
   end
-
   return num_call, feS, Index1
 end
+
 
 # 执行二次搜索
 function perform_secondary_search!(x, Xp, Xb, lower, upper, m1::Int, p1::Int)
@@ -169,7 +168,7 @@ function perform_secondary_search!(x, Xp, Xb, lower, upper, m1::Int, p1::Int)
     shuffle!(ra1)      # 打乱 ra1 数组
 
     j1 = mod(j, p1 + 1)
-    j2 = max(1, mod(j + 1, p1 + 1))
+    j2 = nanmax(1, mod(j + 1, p1 + 1))
     ra = j1, j2  # 计算 ra 数组
 
     xx = min.(Xp[:, j] .- lower, upper .- Xp[:, j]) ./ 4

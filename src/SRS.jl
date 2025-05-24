@@ -8,7 +8,7 @@
 - `args`  : Additional arguments to be passed to `f`
 
 ## Keyword Arguments
-- `maxn`  : The maximum number of iterations
+- `maxn`  : The nanmaximum number of iterations
 - `kw`    : Additional keyword arguments to be passed to `f`
 
 - `p`: 参数翻多少倍
@@ -22,7 +22,8 @@ function SRS(
   OptimalValue::Float64=NaN,
   ObjectiveLimit::Float64=NaN,
   eps::Int=4,
-  DispProcess::Bool=false, verbose=true,
+  verbose=true,
+  goal_multiplier=-1,
   update_eps::Bool=true,
   λ_short::Float64=0.02, λ_long::Float64=0.2,
   InitialLt::Int=3, Lt::Int=2,
@@ -43,7 +44,7 @@ function SRS(
   n_ensemble = 3 * npar + 3
   n_reps = n_ensemble * n_candidate # 总参数，每次循环，总参数个数
 
-  m1 = Int(max(floor(Int, n_ensemble * n_candidate / sp) + 1, 9))
+  m1 = Int(nanmax(floor(Int, n_ensemble * n_candidate / sp) + 1, 9))
   # popsize = Int(m1 * sp * ones(Int, n, 1))
   psize = m1 * ones(Int, npar, 1)
   Mbounds = upper .- lower
@@ -104,62 +105,68 @@ function SRS(
     indexX = sortperm(yps)
     sort!(yps)
 
-    append!(BY, minimum(yps)) # BY 记录的是 最佳
+    append!(BY, nanminimum(yps)) # BY 记录的是 最佳
     EachPar[:, num_iter] = Xp[:, indexX[1]] # 做优的一个
 
     populate_best_value_fe!(_feval_iters, BestValue, num_iter, n_reps)
     populate_each_par_fe!(_x_iters, EachPar, num_iter, n_reps)
 
-    DispProcess && println(goal_multiplier * minimum(BestValue[num_iter, :]), "\tout")
+    if verbose
+      feval = nanminimum(BestValue[num_iter, :])
+      @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, feval)
+    end
 
     if OLindex && !isnan(OV)
-      if abs(OV * goal_multiplier - minimum(BestValue[num_iter, :])) < abs(ObjectiveLimit)
+      if abs(OV * goal_multiplier - nanminimum(BestValue[num_iter, :])) < abs(ObjectiveLimit)
         break
       end
     end
 
     if Index > lt_val
-      if abs(minimum(log10.(Mbounds ./ M))) > deps || num_call > maxn
+      if abs(nanminimum(log10.(Mbounds ./ M))) > deps || num_call > maxn
         break
       end
-      ineed = abs(minimum(BY[num_iter-lt_val+1]) - minimum(BY[num_iter]))
-      if abs(log10(max(ineed, 10.0^(-eps - 1)))) ≥ eps
+      ineed = abs(nanminimum(BY[num_iter-lt_val+1]) - nanminimum(BY[num_iter]))
+      if abs(log10(nanmax(ineed, 10.0^(-eps - 1)))) ≥ eps
         sss = 1
-        bb = minimum(Xp', dims=1)
-        be = maximum(Xp', dims=1)
+        bb = nanminimum(Xp', dims=1)
+        be = nanmaximum(Xp', dims=1)
         lower .= max.(min.(lower, bb[:] .- k[:]), BD) # lower and upper are updated
         upper .= min.(max.(upper, be[:] .+ k[:]), BE)
         Mbounds .= upper .- lower
         k .= Mbounds ./ (psize .- 1)
         Xp1 = Xp[:, indexX[1:sp]]
         # println(Mbounds)
-        
+
         BestX = copy(Xp1)
         x = zeros(npar, m1 * sp)
 
         BestY = zeros(Float64, npar + 1, p1)
         BestY[1, :] .= yps[1:p1]
-        
+
         BX = EachPar[:, num_iter]
 
         num_call, feS, Index1 = perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, psize, p1, m1,
-           fun, num_call, feS)
-          
-        num_iter += 1
-        BestValue[num_iter, 1:p1] .= minimum(BestY[Index1-npar:Index1, :], dims=1)'
+          fun, num_call, feS)
 
-        append!(BY, minimum(BestValue[num_iter, 1:p1]))
+        num_iter += 1
+        BestValue[num_iter, 1:p1] .= nanminimum(BestY[Index1-npar:Index1, :], dims=1)'
+
+        append!(BY, nanminimum(BestValue[num_iter, 1:p1]))
         EachPar[:, num_iter] = BX
 
         n_reps1 = m1 * p1 * npar
         populate_best_value_fe!(_feval_iters, BestValue, num_iter, [n_reps, n_reps1])
         populate_each_par_fe!(_x_iters, EachPar, num_iter, n_reps)
 
-        DispProcess && println(goal_multiplier * minimum(BestValue[num_iter, 1:p1]), "\tin")
+        if verbose
+          feval = nanminimum(BestValue[num_iter, 1:p1])
+          @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, feval)
+        end
 
         Xp[:, 1:p1] .= BestX
-        bb = minimum(Xp', dims=1)
-        be = maximum(Xp', dims=1)
+        bb = nanminimum(Xp', dims=1)
+        be = nanmaximum(Xp', dims=1)
 
         delta_Mbounds = Mbounds * delta
         lower .= max.(lower, bb[:] .- delta_Mbounds)
@@ -179,7 +186,7 @@ function SRS(
         num_call, feS = calculate_goal!(y, fun, x, num_call, feS)
 
         # 更新 yps 和 x
-        yps[1:p1] .= minimum(BestY, dims=1)'
+        yps[1:p1] .= nanminimum(BestY, dims=1)'
         y = vcat(y, yps)
         x = hcat(x, Xp)
 
@@ -190,7 +197,7 @@ function SRS(
 
         # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
         # 检查是否需要更新 eps
-        if abs(log10(max(xneed, 10.0^(-eps - 1)))) ≥ eps && update_eps
+        if abs(log10(nanmax(xneed, 10.0^(-eps - 1)))) ≥ eps && update_eps
           eps += 1
         end
 

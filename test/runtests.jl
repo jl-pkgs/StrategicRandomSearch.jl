@@ -12,9 +12,9 @@ include("test-01.jl")
 
   @test_nowarn result = SRS(Zakharov, lower, upper,
     n_candidate=3, sp=3, delta=0.01, deps=12,
-    maxn=1000, DispProcess=false, verbose=false)
+    maxn=1000, verbose=true)
   
   @time result = SRS(Zakharov, lower, upper,
     n_candidate=3, sp=3, delta=0.01, deps=12,
-    maxn=1000, DispProcess=false, verbose=false)
+    maxn=1000, verbose=true)
 end
