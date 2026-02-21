@@ -21,21 +21,19 @@ function SRS(
     verbose=true, goal_multiplier=-1,
     p::Int=3,                 # Fig 2a, p optimal points (purple squares and yellow squares)
     po::Int=guess_po(p),      # Fig 2a, po optimal points (yellow squares), 精英中的精英
-    deps::Int=12,             # x 空间收缩终止条件
+    # deps::Int=12,           # x 空间收缩终止条件
     delta::Float64=0.01,      # 区间收缩因子, `delta_Mbounds = Mbounds * delta`
     f_atol::Float64=NaN,
     eps::Int=4,               # 进入/维持某些全局跳出逻辑
     update_eps::Bool=true,
     λ_short::Float64=0.02, λ_long::Float64=0.2,
-    InitialLt::Int=3, Lt::Int=2,
+    init_loop_min::Int=3, loop_min::Int=2,
     seed::Int=0, kw...)
 
     Random.seed!(seed) # make the result reproducible
     fun(x) = f(x, args...; kw...)
 
     f_opt::Float64 = NaN
-
-    OLindex = !isnan(f_atol)
     p1 = po
 
     # 初始化参数
@@ -56,7 +54,6 @@ function SRS(
     UB = repeat(ub, 1, n_ensemble)
 
     k = M ./ (psize .- 1)
-    Index = 0
     MM = m1 * p
 
     num_call = 0
@@ -75,27 +72,31 @@ function SRS(
     best_x_iters = zeros(Float64, npar, maxn)
     BestValue = zeros(Float64, maxn, p) # 前n个作为候选
     neps = eps
-    sss = 0
 
     best_feval_iters = Float64[]
     _feval_iters = Float64[]
     _x_iters = []
+    inner_search_started = false
 
     X1 = zeros(Float64, npar, n_reps)
 
+    FT = Float64
+    feval = 0.0
+    fevals = FT[] # 每次loop的最优值
+    loop = 0
+
     # 主循环
     while true
-        lambda, lt_val = (eps > neps + 2) ? (λ_short, copy(Lt)) : (λ_long, copy(Lt))
-        sss == 0 && (lt_val = InitialLt)
-
-        search_init_X!(X1, X_best, X_worst, p, n_reps, lambda, Mbounds, LB, UB)
+        λ = (eps > neps + 2) ? λ_short : λ_long
+        current_loop_min = inner_search_started ? loop_min : init_loop_min
+        search_init_X!(X1, X_best, X_worst, p, n_reps, λ, Mbounds, LB, UB)
 
         y = Vector{Float64}(undef, n_reps)
         num_call, feS = calculate_goal!(y, fun, X1, num_call, feS)
         update_best_theta!(y_best, X_best, X_worst, y, X1, p) # update yps, Xp, Xb
 
         num_iter += 1
-        Index += 1
+        loop += 1
 
         BestValue[num_iter, :] .= y_best # 这里近记录了一次表现最好的
 
@@ -108,26 +109,25 @@ function SRS(
         populate_best_value_fe!(_feval_iters, BestValue, num_iter, n_reps)
         populate_each_par_fe!(_x_iters, best_x_iters, num_iter, n_reps)
 
-        if verbose
-            feval = nanminimum(BestValue[num_iter, :])
-            @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, feval)
-        end
+        feval = nanminimum(BestValue[num_iter, :])
+        verbose && @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, feval)
 
-        if OLindex && !isnan(f_opt)
-            (abs(f_opt * goal_multiplier - nanminimum(BestValue[num_iter, :])) < abs(f_atol)) && break
-        end
+        if loop > current_loop_min
+            f_opt = fevals[loop-current_loop_min] # 不能是邻近的
+            # isapprox(f_opt, feval; atol=f_atol) && break # _f_best收敛
 
-        if Index > lt_val
-            (abs(nanminimum(log10.(Mbounds ./ M))) > deps || num_call > maxn) && break
+            # abs(nanminimum(log10.(Mbounds ./ M))) > deps # M收缩过多
+            (num_call > maxn) && break
 
-            ineed = abs(nanminimum(best_feval_iters[num_iter-lt_val+1]) - nanminimum(best_feval_iters[num_iter]))
+            ineed = abs(nanminimum(best_feval_iters[num_iter-current_loop_min+1]) - nanminimum(best_feval_iters[num_iter]))
+            
             if abs(log10(nanmax(ineed, 10.0^(-eps - 1)))) ≥ eps
+                inner_search_started = true
 
-                sss = 1
-                bb = nanminimum(X_best', dims=1)
-                be = nanmaximum(X_best', dims=1)
-                lower .= max.(min.(lower, bb[:] .- k[:]), lb) # lower and upper are updated
-                upper .= min.(max.(upper, be[:] .+ k[:]), ub)
+                _lower = nanminimum(X_best', dims=1)
+                _upper = nanmaximum(X_best', dims=1)
+                lower .= max.(min.(lower, _lower[:] .- k[:]), lb) # lower and upper are updated
+                upper .= min.(max.(upper, _upper[:] .+ k[:]), ub)
                 Mbounds .= upper .- lower
                 k .= Mbounds ./ (psize .- 1)
                 Xp1 = X_best[:, indexX[1:po]]
@@ -160,12 +160,12 @@ function SRS(
                 end
 
                 X_best[:, 1:p1] .= BestX
-                bb = nanminimum(X_best', dims=1)
-                be = nanmaximum(X_best', dims=1)
+                _lower = nanminimum(X_best', dims=1)
+                _upper = nanmaximum(X_best', dims=1)
 
                 delta_Mbounds = Mbounds * delta
-                lower .= max.(lower, bb[:] .- delta_Mbounds)
-                upper .= min.(upper, be[:] .+ delta_Mbounds)
+                lower .= max.(lower, _lower[:] .- delta_Mbounds)
+                upper .= min.(upper, _upper[:] .+ delta_Mbounds)
                 k .= (upper .- lower) ./ (psize .- 1)
 
                 perform_secondary_search!(x, X_best, X_worst, lower, upper, m1, p1)
@@ -219,6 +219,8 @@ function SRS(
                 populate_each_par_fe!(_x_iters, best_x_iters, num_iter, n_reps2)
             end
         end
+        push!(fevals, feval) # fevals[loop] = feval
     end
+
     return OptimOutput(_feval_iters, _x_iters, best_feval_iters, best_x_iters, num_call, num_iter; verbose)
 end

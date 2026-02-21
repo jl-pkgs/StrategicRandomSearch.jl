@@ -1,5 +1,4 @@
-using Test
-using StrategicRandomSearch
+using StrategicRandomSearch, Test
 
 
 function functn1(x::Vector{Float64})
