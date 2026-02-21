@@ -20,9 +20,11 @@ function SRS(
     verbose=true, goal_multiplier=-1,
     p::Int=3,                 # Fig 2a, p optimal points (purple squares and yellow squares)
     po::Int=guess_po(p),      # Fig 2a, po optimal points (yellow squares), 精英中的精英
-    deps::Int=12,        # x 空间收缩终止条件
-    delta::Float64=0.01, # 区间收缩因子, `delta_Mbounds = Mbounds * delta`
-    f_opt::Float64=NaN, f_atol::Float64=NaN, eps::Int=4, # 进入/维持某些全局跳出逻辑
+    deps::Int=12,             # x 空间收缩终止条件
+    delta::Float64=0.01,      # 区间收缩因子, `delta_Mbounds = Mbounds * delta`
+    f_opt::Float64=NaN,
+    f_atol::Float64=NaN,
+    eps::Int=4,               # 进入/维持某些全局跳出逻辑
     update_eps::Bool=true, λ_short::Float64=0.02, λ_long::Float64=0.2, InitialLt::Int=3, Lt::Int=2,
     seed::Int=0, kw...)
 
@@ -46,10 +48,10 @@ function SRS(
 
     ## 静态变量
     M = upper .- lower
-    BE = copy(upper)
-    BD = copy(lower)
-    Bb = repeat(BD, 1, n_ensemble)
-    Be = repeat(BE, 1, n_ensemble)
+    ub = copy(upper)
+    lb = copy(lower)
+    LB = repeat(lb, 1, n_ensemble)
+    UB = repeat(ub, 1, n_ensemble)
 
     k = M ./ (psize .- 1)
     Index = 0
@@ -66,16 +68,16 @@ function SRS(
     num_call, feS = calculate_goal!(y, fun, x, num_call, feS)
 
     ## 这是怎么回事？
-    yps, Xp, Xb = select_optimal(y, x; p)
+    y_best, X_best, X_worst = select_optimal(y, x; p)
     # BestValueFE = yps[1]
     # EachParFE = Xp[:, 1]
 
-    EachPar = zeros(Float64, npar, maxn)
+    best_x_iters = zeros(Float64, npar, maxn)
     BestValue = zeros(Float64, maxn, p) # 前n个作为候选
     neps = eps
     sss = 0
 
-    BY = Float64[]
+    best_feval_iters = Float64[]
     _feval_iters = Float64[]
     _x_iters = []
 
@@ -86,25 +88,25 @@ function SRS(
         lambda, lt_val = (eps > neps + 2) ? (λ_short, copy(Lt)) : (λ_long, copy(Lt))
         sss == 0 && (lt_val = InitialLt)
 
-        search_init_X!(X1, Xp, Xb, p, n_reps, lambda, Mbounds, Bb, Be)
+        search_init_X!(X1, X_best, X_worst, p, n_reps, lambda, Mbounds, LB, UB)
 
         y = Vector{Float64}(undef, n_reps)
         num_call, feS = calculate_goal!(y, fun, X1, num_call, feS)
-        update_best_theta!(yps, Xp, Xb, y, X1, p) # update yps, Xp, Xb
+        update_best_theta!(y_best, X_best, X_worst, y, X1, p) # update yps, Xp, Xb
 
         num_iter += 1
         Index += 1
 
-        BestValue[num_iter, :] .= yps # 这里近记录了一次表现最好的
+        BestValue[num_iter, :] .= y_best # 这里近记录了一次表现最好的
 
-        indexX = sortperm(yps)
-        sort!(yps)
+        indexX = sortperm(y_best)
+        sort!(y_best)
 
-        append!(BY, nanminimum(yps)) # BY 记录的是 最佳
-        EachPar[:, num_iter] = Xp[:, indexX[1]] # 做优的一个
+        append!(best_feval_iters, nanminimum(y_best)) # BY 记录的是 最佳
+        best_x_iters[:, num_iter] = X_best[:, indexX[1]] # 做优的一个
 
         populate_best_value_fe!(_feval_iters, BestValue, num_iter, n_reps)
-        populate_each_par_fe!(_x_iters, EachPar, num_iter, n_reps)
+        populate_each_par_fe!(_x_iters, best_x_iters, num_iter, n_reps)
 
         if verbose
             feval = nanminimum(BestValue[num_iter, :])
@@ -112,68 +114,66 @@ function SRS(
         end
 
         if OLindex && !isnan(OV)
-            if abs(OV * goal_multiplier - nanminimum(BestValue[num_iter, :])) < abs(f_atol)
-                break
-            end
+            (abs(OV * goal_multiplier - nanminimum(BestValue[num_iter, :])) < abs(f_atol)) && break
         end
 
         if Index > lt_val
-            if abs(nanminimum(log10.(Mbounds ./ M))) > deps || num_call > maxn
-                break
-            end
-            ineed = abs(nanminimum(BY[num_iter-lt_val+1]) - nanminimum(BY[num_iter]))
+            (abs(nanminimum(log10.(Mbounds ./ M))) > deps || num_call > maxn) && break
+
+            ineed = abs(nanminimum(best_feval_iters[num_iter-lt_val+1]) - nanminimum(best_feval_iters[num_iter]))
             if abs(log10(nanmax(ineed, 10.0^(-eps - 1)))) ≥ eps
+
                 sss = 1
-                bb = nanminimum(Xp', dims=1)
-                be = nanmaximum(Xp', dims=1)
-                lower .= max.(min.(lower, bb[:] .- k[:]), BD) # lower and upper are updated
-                upper .= min.(max.(upper, be[:] .+ k[:]), BE)
+                bb = nanminimum(X_best', dims=1)
+                be = nanmaximum(X_best', dims=1)
+                lower .= max.(min.(lower, bb[:] .- k[:]), lb) # lower and upper are updated
+                upper .= min.(max.(upper, be[:] .+ k[:]), ub)
                 Mbounds .= upper .- lower
                 k .= Mbounds ./ (psize .- 1)
-                Xp1 = Xp[:, indexX[1:po]]
+                Xp1 = X_best[:, indexX[1:po]]
                 # println(Mbounds)
 
                 BestX = copy(Xp1)
                 x = zeros(npar, m1 * po)
 
                 BestY = zeros(Float64, npar + 1, p1)
-                BestY[1, :] .= yps[1:p1]
+                BestY[1, :] .= y_best[1:p1]
 
-                BX = EachPar[:, num_iter]
+                BX = best_x_iters[:, num_iter]
 
-                num_call, feS, Index1 = perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, psize, p1, m1,
-                    fun, num_call, feS)
+                num_call, feS, Index1 = perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, psize,
+                    p1, m1, fun, num_call, feS)
 
                 num_iter += 1
                 BestValue[num_iter, 1:p1] .= nanminimum(BestY[Index1-npar:Index1, :], dims=1)'
 
-                append!(BY, nanminimum(BestValue[num_iter, 1:p1]))
-                EachPar[:, num_iter] = BX
+                append!(best_feval_iters, nanminimum(BestValue[num_iter, 1:p1]))
+                best_x_iters[:, num_iter] = BX
 
                 n_reps1 = m1 * p1 * npar
                 populate_best_value_fe!(_feval_iters, BestValue, num_iter, [n_reps, n_reps1])
-                populate_each_par_fe!(_x_iters, EachPar, num_iter, n_reps)
+                populate_each_par_fe!(_x_iters, best_x_iters, num_iter, n_reps)
 
                 if verbose
                     feval = nanminimum(BestValue[num_iter, 1:p1])
                     @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, feval)
                 end
 
-                Xp[:, 1:p1] .= BestX
-                bb = nanminimum(Xp', dims=1)
-                be = nanmaximum(Xp', dims=1)
+                X_best[:, 1:p1] .= BestX
+                bb = nanminimum(X_best', dims=1)
+                be = nanmaximum(X_best', dims=1)
 
                 delta_Mbounds = Mbounds * delta
                 lower .= max.(lower, bb[:] .- delta_Mbounds)
                 upper .= min.(upper, be[:] .+ delta_Mbounds)
                 k .= (upper .- lower) ./ (psize .- 1)
 
-                perform_secondary_search!(x, Xp, Xb, lower, upper, m1, p1)
+                perform_secondary_search!(x, X_best, X_worst, lower, upper, m1, p1)
 
                 # 生成随机数 N
-                N = (BE .- BD) .* rand(npar, m1 * p1) .+ BD
-                x[x.<BD] .= N[x.<BD]
-                x[x.>BE] .= N[x.>BE]
+                N = (ub .- lb) .* rand(npar, m1 * p1) .+ lb
+                x[x.<lb] .= N[x.<lb]
+                x[x.>ub] .= N[x.>ub]
 
                 # 计算 y
                 MM = m1 * p1
@@ -181,14 +181,14 @@ function SRS(
                 num_call, feS = calculate_goal!(y, fun, x, num_call, feS)
 
                 # 更新 yps 和 x
-                yps[1:p1] .= nanminimum(BestY, dims=1)'
-                y = vcat(y, yps)
-                x = hcat(x, Xp)
+                y_best[1:p1] .= nanminimum(BestY, dims=1)'
+                y = vcat(y, y_best)
+                x = hcat(x, X_best)
 
                 # 对 yps 排序并更新
-                yps, indexY = sort(y), sortperm(y)
-                yps = yps[1:p]
-                xneed = abs(yps[1] - BY[num_iter])
+                y_best, indexY = sort(y), sortperm(y)
+                y_best = y_best[1:p]
+                xneed = abs(y_best[1] - best_feval_iters[num_iter])
 
                 # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
                 # 检查是否需要更新 eps
@@ -196,29 +196,29 @@ function SRS(
                     eps += 1
                 end
 
-                Xp = x[:, indexY[1:p]]
-                Xb = x[:, indexY[end]]
-                heihei1 = falses(npar)
-                heihei2 = falses(npar)
-                nx1 = copy(BE)
-                nx2 = copy(BD)
+                X_best = x[:, indexY[1:p]]
+                X_worst = x[:, indexY[end]]
+                hit_upper_bound = falses(npar)
+                hit_lower_bound = falses(npar)
+                _ub = copy(ub)
+                _lb = copy(lb)
 
                 for i = 1:p
-                    nx = Xp[:, i]
-                    heihei1 .= heihei1 .| (nx .>= BE)
-                    heihei2 .= heihei2 .| (nx .<= BD)
-                    nx1[heihei1] .= min.(nx[heihei1], nx1[heihei1])
-                    nx2[heihei2] .= max.(nx[heihei2], nx2[heihei2])
+                    nx = X_best[:, i]
+                    hit_upper_bound .= hit_upper_bound .| (nx .>= ub)
+                    hit_lower_bound .= hit_lower_bound .| (nx .<= lb)
+                    _ub[hit_upper_bound] .= min.(nx[hit_upper_bound], _ub[hit_upper_bound])
+                    _lb[hit_lower_bound] .= max.(nx[hit_lower_bound], _lb[hit_lower_bound])
                 end
 
-                upper[heihei1] .= min.(nx1[heihei1] .+ k[heihei1], BE[heihei1])
-                lower[heihei2] .= max.(nx2[heihei2] .- k[heihei2], BD[heihei2])
+                upper[hit_upper_bound] .= min.(_ub[hit_upper_bound] .+ k[hit_upper_bound], ub[hit_upper_bound])
+                lower[hit_lower_bound] .= max.(_lb[hit_lower_bound] .- k[hit_lower_bound], lb[hit_lower_bound])
 
                 n_reps2 = m1 * p1
                 populate_best_value_fe!(_feval_iters, BestValue, num_iter, n_reps2)
-                populate_each_par_fe!(_x_iters, EachPar, num_iter, n_reps2)
+                populate_each_par_fe!(_x_iters, best_x_iters, num_iter, n_reps2)
             end
         end
     end
-    return OptimOutput(_feval_iters, _x_iters, BY, EachPar, num_call, num_iter; verbose)
+    return OptimOutput(_feval_iters, _x_iters, best_feval_iters, best_x_iters, num_call, num_iter; verbose)
 end

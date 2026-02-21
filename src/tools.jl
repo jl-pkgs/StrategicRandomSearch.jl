@@ -33,31 +33,31 @@ end
 
 
 # 执行外层搜索迭代
-function search_init_X!(X, Xp, Xb, p, n_reps, lambda, Mbounds, Bb, Be)
+function search_init_X!(X, X_best, X_worst, p, n_reps, lambda, Mbounds, LB, UB)
     npar = length(Mbounds)
     lam_Mbounds = lambda * Mbounds
     lam_Mbounds_IN = lambda * Mbounds .* Diagonal(ones(npar))
 
     for i in 1:p
         r1 = 2 .* rand(Bool, npar, npar) .- 1
-        XPi = repeat(Xp[:, i], 1, npar)
+        XPi = repeat(X_best[:, i], 1, npar)
 
         xx1 = XPi .+ lam_Mbounds_IN    # npar
         xx2 = XPi .- lam_Mbounds_IN    # npar 
         xx3 = XPi .- lam_Mbounds .* r1 # npar
 
-        xb1 = (Xp[:, i] .+ Xb) ./ 2 # 1
-        xb2 = 2 * Xb .- Xp[:, i]    # 1
-        xb3 = 2 * Xp[:, i] .- Xb    # 1
+        xb1 = (X_best[:, i] .+ X_worst) ./ 2 # 1
+        xb2 = 2 * X_worst .- X_best[:, i]    # 1
+        xb3 = 2 * X_best[:, i] .- X_worst    # 1
 
         xx = hcat(xx1, xx2, xb1, xb2, xb3, xx3) # [3npar + 3, ]
-        xx .= clamp.(xx, Bb, Be)
+        xx .= clamp.(xx, LB, UB)
         X[:, i:p:n_reps] .= xx
     end
 end
 
 
-# yps, Xp, Xb = select_theta(y, x; p)
+# yps, X_best, X_worst = select_theta(y, x; p)
 function select_optimal(y, x; p::Int)
     inds = sortperm(y)
     y_optimal = y[inds[1:p]]
@@ -68,24 +68,24 @@ end
 
 
 # 更新最优解
-function update_best_theta!(yps, Xp, Xb, y, x, p::Int)
+function update_best_theta!(yps, X_best, X_worst, y, x, p::Int)
     for i in 1:p
         yp = copy(y[i:p:end])
         yp = vcat(yp, yps[i])
         indexY = argmin(yp)
         yps[i] = copy(yp[indexY]) # update
 
-        xp = hcat(x[:, i:p:end], Xp[:, i])
-        Xp[:, i] .= xp[:, indexY] # update
+        xp = hcat(x[:, i:p:end], X_best[:, i])
+        X_best[:, i] .= xp[:, indexY] # update
     end
 
     indexYb = argmax(y)
-    Xb .= x[:, indexYb]
+    X_worst .= x[:, indexYb]
 end
 
-# function select_optimal(yps, Xp)
+# function select_optimal(yps, X_best)
 #   i = sortperm(yps)[1]
-#   yps[i], Xp[:, i]
+#   yps[i], X_best[:, i]
 # end
 
 
@@ -158,7 +158,7 @@ end
 
 
 # 执行二次搜索
-function perform_secondary_search!(x, Xp, Xb, lower, upper, m1::Int, p1::Int)
+function perform_secondary_search!(x, X_best, X_worst, lower, upper, m1::Int, p1::Int)
     npar = length(lower)
     pp = m1
 
@@ -171,22 +171,22 @@ function perform_secondary_search!(x, Xp, Xb, lower, upper, m1::Int, p1::Int)
         j2 = nanmax(1, mod(j + 1, p1 + 1))
         ra = j1, j2  # 计算 ra 数组
 
-        xx = min.(Xp[:, j] .- lower, upper .- Xp[:, j]) ./ 4
+        xx = min.(X_best[:, j] .- lower, upper .- X_best[:, j]) ./ 4
         xxx = randn(npar, pp - 9) .* xx
 
         # 更新 x 数组的某些列
-        x[:, (j-1)*pp+1:j*pp-9] .= repeat(Xp[:, j], 1, pp - 9) .+ xxx
+        x[:, (j-1)*pp+1:j*pp-9] .= repeat(X_best[:, j], 1, pp - 9) .+ xxx
 
-        x[:, j*pp-8] .= Xp[:, ra1[3]] .- Xp[:, ra1[1]] .+ Xp[:, ra1[2]]
-        x[:, j*pp-7] .= (2 * Xp[:, ra1[1]] .- Xp[:, ra1[3]] .- Xp[:, ra1[2]]) / 2
+        x[:, j*pp-8] .= X_best[:, ra1[3]] .- X_best[:, ra1[1]] .+ X_best[:, ra1[2]]
+        x[:, j*pp-7] .= (2 * X_best[:, ra1[1]] .- X_best[:, ra1[3]] .- X_best[:, ra1[2]]) / 2
 
-        x[:, j*pp-6] .= Xb .- (Xp[:, ra[2]] .+ Xp[:, ra[1]]) / 2
-        x[:, j*pp-5] .= Xp[:, ra[2]] .- Xb .+ Xp[:, ra[1]]
-        x[:, j*pp-4] .= x[:, j*pp-5] .- (Xp[:, ra[2]] .- 2 * Xb .+ Xp[:, ra[1]]) / 2
-        x[:, j*pp-3] .= Xb .+ (Xp[:, ra[2]] .- 2 * Xb .+ Xp[:, ra[1]]) / 4
+        x[:, j*pp-6] .= X_worst .- (X_best[:, ra[2]] .+ X_best[:, ra[1]]) / 2
+        x[:, j*pp-5] .= X_best[:, ra[2]] .- X_worst .+ X_best[:, ra[1]]
+        x[:, j*pp-4] .= x[:, j*pp-5] .- (X_best[:, ra[2]] .- 2 * X_worst .+ X_best[:, ra[1]]) / 2
+        x[:, j*pp-3] .= X_worst .+ (X_best[:, ra[2]] .- 2 * X_worst .+ X_best[:, ra[1]]) / 4
 
-        x[:, j*pp-2] .= (Xp[:, j] .+ Xb) / 2
-        x[:, j*pp-1] .= 2 * Xb .- Xp[:, j]
-        x[:, j*pp-0] .= 2 * Xp[:, j] .- Xb
+        x[:, j*pp-2] .= (X_best[:, j] .+ X_worst) / 2
+        x[:, j*pp-1] .= 2 * X_worst .- X_best[:, j]
+        x[:, j*pp-0] .= 2 * X_best[:, j] .- X_worst
     end
 end
