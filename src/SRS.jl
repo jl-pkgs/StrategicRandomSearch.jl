@@ -16,25 +16,27 @@ guess_po(p::Int) = p < 5 ? p : (p < 12 ? 5 : 12)
 - `p`: 参数翻多少倍
 """
 function SRS(
-    f::Function, lower::Vector{Float64}, upper::Vector{Float64}, args...; maxn::Int=1000,
+    f::Function, lower::Vector{Float64}, upper::Vector{Float64}, args...;
+    maxn::Int=1000,
     verbose=true, goal_multiplier=-1,
     p::Int=3,                 # Fig 2a, p optimal points (purple squares and yellow squares)
     po::Int=guess_po(p),      # Fig 2a, po optimal points (yellow squares), 精英中的精英
     deps::Int=12,             # x 空间收缩终止条件
     delta::Float64=0.01,      # 区间收缩因子, `delta_Mbounds = Mbounds * delta`
-    f_opt::Float64=NaN,
     f_atol::Float64=NaN,
     eps::Int=4,               # 进入/维持某些全局跳出逻辑
-    update_eps::Bool=true, λ_short::Float64=0.02, λ_long::Float64=0.2, InitialLt::Int=3, Lt::Int=2,
+    update_eps::Bool=true,
+    λ_short::Float64=0.02, λ_long::Float64=0.2,
+    InitialLt::Int=3, Lt::Int=2,
     seed::Int=0, kw...)
 
     Random.seed!(seed) # make the result reproducible
-
     fun(x) = f(x, args...; kw...)
+
+    f_opt::Float64 = NaN
 
     OLindex = !isnan(f_atol)
     p1 = po
-    OV = f_opt
 
     # 初始化参数
     npar = length(lower)
@@ -67,10 +69,8 @@ function SRS(
 
     num_call, feS = calculate_goal!(y, fun, x, num_call, feS)
 
-    ## 这是怎么回事？
     y_best, X_best, X_worst = select_optimal(y, x; p)
-    # BestValueFE = yps[1]
-    # EachParFE = Xp[:, 1]
+
 
     best_x_iters = zeros(Float64, npar, maxn)
     BestValue = zeros(Float64, maxn, p) # 前n个作为候选
@@ -113,8 +113,8 @@ function SRS(
             @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, feval)
         end
 
-        if OLindex && !isnan(OV)
-            (abs(OV * goal_multiplier - nanminimum(BestValue[num_iter, :])) < abs(f_atol)) && break
+        if OLindex && !isnan(f_opt)
+            (abs(f_opt * goal_multiplier - nanminimum(BestValue[num_iter, :])) < abs(f_atol)) && break
         end
 
         if Index > lt_val
