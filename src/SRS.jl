@@ -1,3 +1,5 @@
+guess_po(p::Int) = p < 5 ? p : (p < 12 ? 5 : 12)
+
 """
   SRS(f, lower, upper; maxn=1000, )
 
@@ -15,36 +17,29 @@
 """
 function SRS(
   f::Function, lower::Vector{Float64}, upper::Vector{Float64}, args...; maxn::Int=1000,
-  n_candidate::Int=3,
-  sp::Union{Nothing,Int}=nothing,
-  deps::Int=12,
-  delta::Float64=0.01,
-  OptimalValue::Float64=NaN,
-  ObjectiveLimit::Float64=NaN,
-  eps::Int=4,
-  verbose=true,
-  goal_multiplier=-1,
-  update_eps::Bool=true,
-  λ_short::Float64=0.02, λ_long::Float64=0.2,
-  InitialLt::Int=3, Lt::Int=2,
-  seed::Int=0,
-  kw...)
+  verbose=true, goal_multiplier=-1,
+  p::Int=3,                 # Fig 2a, p optimal points (purple squares and yellow squares)
+  po::Int=guess_po(p),      # Fig 2a, po optimal points (yellow squares), 精英中的精英
+  deps::Int=12,        # x 空间收缩终止条件
+  delta::Float64=0.01, # 区间收缩因子, `delta_Mbounds = Mbounds * delta`
+  f_opt::Float64=NaN, f_atol::Float64=NaN, eps::Int=4, # 进入/维持某些全局跳出逻辑
+  update_eps::Bool=true, λ_short::Float64=0.02, λ_long::Float64=0.2, InitialLt::Int=3, Lt::Int=2,
+  seed::Int=0, kw...)
+
   Random.seed!(seed) # make the result reproducible
 
   fun(x) = f(x, args...; kw...)
-  guess_sp(p) = p < 5 ? p : (p < 12 ? 5 : 12)
-  isnothing(sp) && (sp = guess_sp(n_candidate))
 
-  OLindex = !isnan(ObjectiveLimit)
-  p1 = sp
-  OV = OptimalValue
+  OLindex = !isnan(f_atol)
+  p1 = po
+  OV = f_opt
 
   # 初始化参数
   npar = length(lower)
   n_ensemble = 3 * npar + 3
-  n_reps = n_ensemble * n_candidate # 总参数，每次循环，总参数个数
+  n_reps = n_ensemble * p # 总参数，每次循环，总参数个数
 
-  m1 = Int(nanmax(floor(Int, n_ensemble * n_candidate / sp) + 1, 9))
+  m1 = Int(nanmax(floor(Int, n_ensemble * p / po) + 1, 9))
   # popsize = Int(m1 * sp * ones(Int, n, 1))
   psize = m1 * ones(Int, npar, 1)
   Mbounds = upper .- lower
@@ -58,7 +53,7 @@ function SRS(
 
   k = M ./ (psize .- 1)
   Index = 0
-  MM = m1 * n_candidate
+  MM = m1 * p
 
   num_call = 0
   num_iter = 0
@@ -71,12 +66,12 @@ function SRS(
   num_call, feS = calculate_goal!(y, fun, x, num_call, feS)
 
   ## 这是怎么回事？
-  yps, Xp, Xb = select_theta(y, x; n_candidate)
+  yps, Xp, Xb = select_optimal(y, x; p)
   # BestValueFE = yps[1]
   # EachParFE = Xp[:, 1]
 
   EachPar = zeros(Float64, npar, maxn)
-  BestValue = zeros(Float64, maxn, n_candidate) # 前n个作为候选
+  BestValue = zeros(Float64, maxn, p) # 前n个作为候选
   neps = eps
   sss = 0
 
@@ -91,11 +86,11 @@ function SRS(
     lambda, lt_val = (eps > neps + 2) ? (λ_short, copy(Lt)) : (λ_long, copy(Lt))
     sss == 0 && (lt_val = InitialLt)
 
-    search_init_X!(X1, Xp, Xb, n_candidate, n_reps, lambda, Mbounds, Bb, Be)
+    search_init_X!(X1, Xp, Xb, p, n_reps, lambda, Mbounds, Bb, Be)
 
     y = Vector{Float64}(undef, n_reps)
     num_call, feS = calculate_goal!(y, fun, X1, num_call, feS)
-    update_best_theta!(yps, Xp, Xb, y, X1, n_candidate) # update yps, Xp, Xb
+    update_best_theta!(yps, Xp, Xb, y, X1, p) # update yps, Xp, Xb
 
     num_iter += 1
     Index += 1
@@ -117,7 +112,7 @@ function SRS(
     end
 
     if OLindex && !isnan(OV)
-      if abs(OV * goal_multiplier - nanminimum(BestValue[num_iter, :])) < abs(ObjectiveLimit)
+      if abs(OV * goal_multiplier - nanminimum(BestValue[num_iter, :])) < abs(f_atol)
         break
       end
     end
@@ -135,11 +130,11 @@ function SRS(
         upper .= min.(max.(upper, be[:] .+ k[:]), BE)
         Mbounds .= upper .- lower
         k .= Mbounds ./ (psize .- 1)
-        Xp1 = Xp[:, indexX[1:sp]]
+        Xp1 = Xp[:, indexX[1:po]]
         # println(Mbounds)
 
         BestX = copy(Xp1)
-        x = zeros(npar, m1 * sp)
+        x = zeros(npar, m1 * po)
 
         BestY = zeros(Float64, npar + 1, p1)
         BestY[1, :] .= yps[1:p1]
@@ -192,7 +187,7 @@ function SRS(
 
         # 对 yps 排序并更新
         yps, indexY = sort(y), sortperm(y)
-        yps = yps[1:n_candidate]
+        yps = yps[1:p]
         xneed = abs(yps[1] - BY[num_iter])
 
         # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
@@ -201,14 +196,14 @@ function SRS(
           eps += 1
         end
 
-        Xp = x[:, indexY[1:n_candidate]]
+        Xp = x[:, indexY[1:p]]
         Xb = x[:, indexY[end]]
         heihei1 = falses(npar)
         heihei2 = falses(npar)
         nx1 = copy(BE)
         nx2 = copy(BD)
 
-        for i = 1:n_candidate
+        for i = 1:p
           nx = Xp[:, i]
           heihei1 .= heihei1 .| (nx .>= BE)
           heihei2 .= heihei2 .| (nx .<= BD)

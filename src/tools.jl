@@ -1,7 +1,7 @@
 # y是修改地址，无需返回
 function calculate_goal!(y::Vector{Float64}, f::Function, x::Matrix{Float64},
   num_call::Int, feS::Int)
-  
+
   N = size(x, 2)
   @inbounds @threads for i in 1:N
     y[i] = f(x[:, i])
@@ -57,25 +57,25 @@ function search_init_X!(X, Xp, Xb, p, n_reps, lambda, Mbounds, Bb, Be)
 end
 
 
-# yps, Xp, Xb = select_theta(y, x; n_candidate)
-function select_theta(y, x; n_candidate)
-  yps, indexY = sort(y), sortperm(y)
-  yps = yps[1:n_candidate]
-  Xp = x[:, indexY[1:n_candidate]]
-  Xb = x[:, indexY[end]]
-  yps, Xp, Xb
+# yps, Xp, Xb = select_theta(y, x; p)
+function select_optimal(y, x; p::Int)
+  inds = sortperm(y)
+  y_optimal = y[inds[1:p]]
+  X_optimal = x[:, inds[1:p]]
+  X_worst = x[:, inds[end]]
+  y_optimal, X_optimal, X_worst
 end
 
 
 # 更新最优解
-function update_best_theta!(yps, Xp, Xb, y, x, n_candidate::Int)
-  for i in 1:n_candidate
-    yp = copy(y[i:n_candidate:end])
+function update_best_theta!(yps, Xp, Xb, y, x, p::Int)
+  for i in 1:p
+    yp = copy(y[i:p:end])
     yp = vcat(yp, yps[i])
     indexY = argmin(yp)
     yps[i] = copy(yp[indexY]) # update
 
-    xp = hcat(x[:, i:n_candidate:end], Xp[:, i])
+    xp = hcat(x[:, i:p:end], Xp[:, i])
     Xp[:, i] .= xp[:, indexY] # update
   end
 

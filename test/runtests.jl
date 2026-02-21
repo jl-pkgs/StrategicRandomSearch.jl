@@ -11,10 +11,10 @@ include("test-01.jl")
   upper = 10.0 * ones(n)
 
   @test_nowarn result = SRS(Zakharov, lower, upper,
-    n_candidate=3, sp=3, delta=0.01, deps=12,
+    p=3, po=3, delta=0.01, deps=12,
     maxn=1000, verbose=true)
   
   @time result = SRS(Zakharov, lower, upper,
-    n_candidate=3, sp=3, delta=0.01, deps=12,
+    p=3, po=3, delta=0.01, deps=12,
     maxn=1000, verbose=true)
 end

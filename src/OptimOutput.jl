@@ -5,7 +5,7 @@
   x::Vector{Float64}
   feval::Float64 = NaN
 
-  x_iters::Matrix{Float64} # EachPar
+  x_iters::Matrix{Float64}     # EachPar, 图1b, 精英中的精英, 红色点中的最优一个
   feval_iters::Vector{Float64} # BY
 
   _x_iters::Vector
