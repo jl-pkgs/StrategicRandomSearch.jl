@@ -6,8 +6,7 @@ using Printf
 using Parameters
 using Base.Threads
 
-import NaNStatistics: nanminimum, 
-  nanmaximum, nanmax, nanmin
+import NaNStatistics: nanminimum, nanmaximum, nanmax, nanmin
 
 include("OptimOutput.jl")
 include("SRS.jl")
