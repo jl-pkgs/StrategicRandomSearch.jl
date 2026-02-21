@@ -91,45 +91,45 @@ end
 
 # 执行内层精细搜索
 # not used
-# num_call, feS, Index1 = perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, psize, p1, m1, fun)
-function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, psize, p1, m1, fun, num_call, feS)
+# num_call, feS, Index1 = perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, param_grid_sizes, p1, search_block_size, fun)
+function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, search_param_sizes, p1, search_size, fun, num_call, feS)
     npar = length(lower)
 
-    maxpsize = nanmaximum(psize)
+    max_param_grid_size = nanmaximum(search_param_sizes)
     for i in 1:p1
-        x[:, (i-1)*maxpsize+1:i*maxpsize] .= repeat(Xp1[:, i], 1, maxpsize)
+        x[:, (i-1)*max_param_grid_size+1:i*max_param_grid_size] .= repeat(Xp1[:, i], 1, max_param_grid_size)
     end
 
     Pi = zeros(Int, npar, p1)
-    LL = zeros(Float64, npar, maxpsize)
+    LL = zeros(Float64, npar, max_param_grid_size)
 
     for i = 1:p1
         Pi[:, i] .= randperm(npar)
     end
 
     for i in 1:npar
-        LL[i, :] .= lower[i] .+ k[i] .* (0:maxpsize-1)
+        LL[i, :] .= lower[i] .+ k[i] .* (0:max_param_grid_size-1)
     end
 
     Index1 = 1
 
-    MM = m1 * p1
+    MM = search_size * p1
     y = Vector{Float64}(undef, MM)
 
     for i = 1:npar
         for j = 1:p1
             # 更新 x 矩阵的部分
             _i = Pi[i, j]
-            xneed = LL[_i, 1:maxpsize-1] + (k[_i]*rand(1, psize[_i] - 1))[:]
-            x[_i, (j-1)*psize[_i]+2:j*psize[_i]] .= xneed
-            x[_i, (j-1)*psize[_i]+1] = x[_i, 1] + k[_i] * (2 * rand() - 1)
+            xneed = LL[_i, 1:max_param_grid_size-1] + (k[_i]*rand(1, search_param_sizes[_i] - 1))[:]
+            x[_i, (j-1)*search_param_sizes[_i]+2:j*search_param_sizes[_i]] .= xneed
+            x[_i, (j-1)*search_param_sizes[_i]+1] = x[_i, 1] + k[_i] * (2 * rand() - 1)
 
             # 处理边界情况
-            if x[_i, (j-1)*psize[_i]+1] < lower[_i]
-                x[_i, (j-1)*psize[_i]+1] =
+            if x[_i, (j-1)*search_param_sizes[_i]+1] < lower[_i]
+                x[_i, (j-1)*search_param_sizes[_i]+1] =
                     lower[_i] + k[_i] * rand()
-            elseif x[_i, (j-1)*psize[_i]+1] > upper[_i]
-                x[_i, (j-1)*psize[_i]+1] =
+            elseif x[_i, (j-1)*search_param_sizes[_i]+1] > upper[_i]
+                x[_i, (j-1)*search_param_sizes[_i]+1] =
                     upper[_i] - k[_i] * rand()
             end
         end
@@ -139,17 +139,17 @@ function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, psize,
 
         for j = 1:p1
             _i = Pi[i, j]
-            nash, index = findmin(y[(j-1)*psize[_i]+1:j*psize[_i]])
+            nash, index = findmin(y[(j-1)*search_param_sizes[_i]+1:j*search_param_sizes[_i]])
             BestY[Index1, j] = nash
 
-            x[_i, (j-1)*psize[_i]+1:j*psize[_i]] .=
-                x[_i, (j-1)*psize[_i]+index] * ones(Float64, maxpsize)
+            x[_i, (j-1)*search_param_sizes[_i]+1:j*search_param_sizes[_i]] .=
+                x[_i, (j-1)*search_param_sizes[_i]+index] * ones(Float64, max_param_grid_size)
 
             if nash == nanminimum(BestY[1:Index1, j])
-                BestX[:, j] .= x[:, (j-1)*psize[_i]+index]
+                BestX[:, j] .= x[:, (j-1)*search_param_sizes[_i]+index]
             end
             if nash == nanminimum([nanminimum(BestY[1:Index1-1, :]), nanminimum(BestY[Index1, 1:j])])
-                BX .= x[:, (j-1)*psize[_i]+index]
+                BX .= x[:, (j-1)*search_param_sizes[_i]+index]
             end
         end
     end
@@ -158,9 +158,9 @@ end
 
 
 # 执行二次搜索
-function perform_secondary_search!(x, X_best, X_worst, lower, upper, m1::Int, p1::Int)
+function perform_secondary_search!(x, X_best, X_worst, lower, upper, search_block_size::Int, p1::Int)
     npar = length(lower)
-    pp = m1
+    pp = search_block_size
 
     for j = 1:p1
         ra1 = 1:p1         # 创建 0 到 p1-1 的数组
