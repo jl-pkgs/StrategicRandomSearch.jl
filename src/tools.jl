@@ -1,14 +1,13 @@
 # y是修改地址，无需返回
 function calculate_goal!(y::Vector{Float64}, f::Function, x::Matrix{Float64},
-    num_call::Int, feS::Int)
+    num_call::Int)
 
     N = size(x, 2)
     @inbounds @threads for i in 1:N
-        y[i] = f(x[:, i])
+        y[i] = f(x[:, i]) # TODO: 多线程存在data race
     end
     num_call += N
-    feS += N
-    return num_call, feS
+    return num_call
 end
 
 
@@ -57,23 +56,52 @@ function search_init_X!(X, X_best, X_worst, p, n_reps, lambda, Mbounds, LB, UB)
 end
 
 
-# yps, X_best, X_worst = select_theta(y, x; p)
+# UPDATE: lower, upper, search_steps
+function update_bounds_and_steps!(
+    lower::AbstractVector{T}, upper::AbstractVector{T}, Mbounds::AbstractVector{T},
+    best_lower::AbstractVector{T}, best_upper::AbstractVector{T},
+    lb::AbstractVector{T}, ub::AbstractVector{T},
+    search_steps::AbstractVecOrMat{T}, search_param_sizes::AbstractVecOrMat{<:Integer};
+    mode::Symbol, delta::T=zero(T), update_Mbounds::Bool=true) where {T<:AbstractFloat}
+
+    # 约定维度:
+    # - search_param_sizes: n_param x 1（或等价的一维向量）
+    # - search_steps: 与 search_param_sizes 同维度
+    step_vec = search_steps[:]
+    if mode === :expand
+        lower .= max.(min.(lower, best_lower .- step_vec), lb)
+        upper .= min.(max.(upper, best_upper .+ step_vec), ub)
+    elseif mode === :shrink
+        delta_Mbounds = (Mbounds*delta)[:]
+        lower .= max.(lower, best_lower .- delta_Mbounds)
+        upper .= min.(upper, best_upper .+ delta_Mbounds)
+    else
+        throw(ArgumentError("mode must be :expand or :shrink"))
+    end
+
+    update_Mbounds && (Mbounds .= upper .- lower)
+    search_steps .= (upper .- lower) ./ (search_param_sizes .- 1)
+    return nothing
+end
+
+
+# y_best, X_best, X_worst = select_theta(y, x; p)
 function select_optimal(y, x; p::Int)
     inds = sortperm(y)
-    y_optimal = y[inds[1:p]]
-    X_optimal = x[:, inds[1:p]]
+    y_best = y[inds[1:p]]
+    X_best = x[:, inds[1:p]]
     X_worst = x[:, inds[end]]
-    y_optimal, X_optimal, X_worst
+    y_best, X_best, X_worst
 end
 
 
 # 更新最优解
-function update_best_theta!(yps, X_best, X_worst, y, x, p::Int)
+function update_best_theta!(y_best, X_best, X_worst, y, x, p::Int)
     for i in 1:p
         yp = copy(y[i:p:end])
-        yp = vcat(yp, yps[i])
+        yp = vcat(yp, y_best[i])
         indexY = argmin(yp)
-        yps[i] = copy(yp[indexY]) # update
+        y_best[i] = copy(yp[indexY]) # update
 
         xp = hcat(x[:, i:p:end], X_best[:, i])
         X_best[:, i] .= xp[:, indexY] # update
@@ -83,16 +111,16 @@ function update_best_theta!(yps, X_best, X_worst, y, x, p::Int)
     X_worst .= x[:, indexYb]
 end
 
-# function select_optimal(yps, X_best)
-#   i = sortperm(yps)[1]
-#   yps[i], X_best[:, i]
+# function select_optimal(y_best, X_best)
+#   i = sortperm(y_best)[1]
+#   y_best[i], X_best[:, i]
 # end
 
 
 # 执行内层精细搜索
 # not used
-# num_call, feS, Index1 = perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, param_grid_sizes, p1, search_block_size, fun)
-function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, search_param_sizes, p1, search_size, fun, num_call, feS)
+# num_call, Index1 = perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, param_grid_sizes, p1, search_block_size, fun)
+function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, search_param_sizes, p1, search_size, fun, num_call)
     npar = length(lower)
 
     max_param_grid_size = nanmaximum(search_param_sizes)
@@ -134,7 +162,7 @@ function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, search
             end
         end
 
-        num_call, feS = calculate_goal!(y, fun, x, num_call, feS)
+        num_call = calculate_goal!(y, fun, x, num_call)
         Index1 += 1
 
         for j = 1:p1
@@ -153,7 +181,7 @@ function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, search
             end
         end
     end
-    return num_call, feS, Index1
+    return num_call, Index1
 end
 
 
