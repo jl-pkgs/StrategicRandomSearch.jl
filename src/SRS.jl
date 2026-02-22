@@ -43,13 +43,10 @@ function SRS(
     search_steps = M ./ (search_param_sizes .- 1) # n_param x 1, 与 search_param_sizes 同维度
     n_cand = search_size * p
 
-
     # 初始化解空间
     X_cand = (upper .+ lower) ./ 2 .+ (M .* (rand(n_param, n_cand) .- 1) ./ 2)
     y_cand = Vector{Float64}(undef, n_cand)
-
-    num_call = 0
-    num_call = calculate_goal!(y_cand, fn, X_cand, num_call)
+    num_call = calculate_goal!(y_cand, fn, X_cand) # update y_cand
 
     y_opt, X_opt, X_worst = select_optimal(y_cand, X_cand; p) # Optimal: 精英点
 
@@ -59,11 +56,11 @@ function SRS(
     neps = eps
     X1 = zeros(Float64, n_param, n_pop_out)
 
-    best_feval_iters = Float64[]
-    _x_iters = []
-    _feval_iters = Float64[]
+    fevals_loops = Float64[] # 每次loop的最优值
+    feval_iters = Float64[]
+    feval_calls = Float64[]
+    x_calls = []
 
-    _fevals_loops = Float64[] # 每次loop的最优值
     inner_search_started = false
     loop = 0
     num_iter = 0
@@ -86,22 +83,22 @@ function SRS(
         indexX = sortperm(y_opt)
         sort!(y_opt)
 
-        append!(best_feval_iters, nanminimum(y_opt)) # BY 记录的是 最佳
+        append!(feval_iters, nanminimum(y_opt)) # BY 记录的是 最佳
         best_x_iters[:, num_iter] = X_opt[:, indexX[1]] # 做优的一个
 
-        push_best_history!(_feval_iters, _x_iters, best_fvals_p, best_x_iters, num_iter)
+        push_best_history!(feval_calls, x_calls, best_fvals_p, best_x_iters, num_iter)
 
         _feval = nanminimum(best_fvals_p[num_iter, :])
         verbose && @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, _feval)
 
         if loop > current_loop_min
-            f_opt = _fevals_loops[loop-current_loop_min] # 不能是邻近的
+            f_opt = fevals_loops[loop-current_loop_min] # 不能是邻近的
             # isapprox(f_opt, feval; atol=f_atol) && break # _f_best收敛
 
             # abs(nanminimum(log10.(Mbounds ./ M))) > deps # M收缩过多
             (num_call > maxn) && break
 
-            ineed = abs(nanminimum(best_feval_iters[num_iter-current_loop_min+1]) - nanminimum(best_feval_iters[num_iter]))
+            ineed = abs(nanminimum(feval_iters[num_iter-current_loop_min+1]) - nanminimum(feval_iters[num_iter]))
 
             if abs(log10(nanmax(ineed, 10.0^(-eps - 1)))) ≥ eps
                 inner_search_started = true
@@ -124,9 +121,9 @@ function SRS(
                 num_iter += 1
                 best_fvals_p[num_iter, 1:p1] .= nanminimum(BestY[Index1-n_param:Index1, :], dims=1)'
 
-                append!(best_feval_iters, nanminimum(best_fvals_p[num_iter, 1:p1]))
+                append!(feval_iters, nanminimum(best_fvals_p[num_iter, 1:p1]))
                 best_x_iters[:, num_iter] = BX
-                push_best_history!(_feval_iters, _x_iters, best_fvals_p, best_x_iters, num_iter)
+                push_best_history!(feval_calls, x_calls, best_fvals_p, best_x_iters, num_iter)
 
                 _feval = nanminimum(best_fvals_p[num_iter, 1:p1])
                 verbose && @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, _feval)
@@ -154,7 +151,7 @@ function SRS(
                 # 对 yps 排序并更新
                 y_opt, indexY = sort(y_cand), sortperm(y_cand)
                 y_opt = y_opt[1:p]
-                xneed = abs(y_opt[1] - best_feval_iters[num_iter])
+                xneed = abs(y_opt[1] - feval_iters[num_iter])
 
                 # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
                 # 检查是否需要更新 eps
@@ -180,11 +177,12 @@ function SRS(
                 upper[hit_upper_bound] .= min.(_ub[hit_upper_bound] .+ search_steps[hit_upper_bound], ub[hit_upper_bound])
                 lower[hit_lower_bound] .= max.(_lb[hit_lower_bound] .- search_steps[hit_lower_bound], lb[hit_lower_bound])
 
-                push_best_history!(_feval_iters, _x_iters, best_fvals_p, best_x_iters, num_iter)
+                push_best_history!(feval_calls, x_calls, best_fvals_p, best_x_iters, num_iter)
             end
         end
-        push!(_fevals_loops, _feval) # _fevals_loop[loop] = feval
+        push!(fevals_loops, _feval) # _fevals_loop[loop] = feval
     end
 
-    return OptimOutput(_feval_iters, _x_iters, best_feval_iters, best_x_iters, num_call, num_iter; verbose)
+    return OptimOutput(feval_calls, x_calls,
+        feval_iters, best_x_iters, num_call, num_iter; verbose)
 end
