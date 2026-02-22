@@ -1,6 +1,8 @@
 guess_po(p::Int) = p < 5 ? p : (p < 12 ? 5 : 12)
 
-
+"""
+- `_cand`: candidate
+"""
 function SRS(
     f::Function, lower::Vector{Float64}, upper::Vector{Float64}, args...;
     maxn::Int=1000, seed::Int=0, verbose=true,
@@ -16,7 +18,7 @@ function SRS(
     kw...)
 
     Random.seed!(seed) # make the result reproducible
-    fun(x) = f(x, args...; kw...)
+    fn(x) = f(x, args...; kw...)
 
     f_opt::Float64 = NaN
     p1 = po
@@ -39,20 +41,20 @@ function SRS(
     UB = repeat(ub, 1, n_ensemble)
 
     search_steps = M ./ (search_param_sizes .- 1) # n_param x 1, 与 search_param_sizes 同维度
-    MM = search_size * p
+    n_cand = search_size * p
 
-    num_call = 0
-    num_iter = 0
 
     # 初始化解空间
-    x = (upper .+ lower) ./ 2 .+ (M .* (rand(n_param, MM) .- 1) ./ 2)
-    y = Vector{Float64}(undef, MM)
+    X_cand = (upper .+ lower) ./ 2 .+ (M .* (rand(n_param, n_cand) .- 1) ./ 2)
+    y_cand = Vector{Float64}(undef, n_cand)
 
-    num_call = calculate_goal!(y, fun, x, num_call)
-    y_opt, X_opt, X_worst = select_optimal(y, x; p) # Optimal: 精英点
+    num_call = 0
+    num_call = calculate_goal!(y_cand, fn, X_cand, num_call)
 
-    best_x_iters = zeros(Float64, n_param, maxn)
-    best_fvals_p = zeros(Float64, maxn, p) # 前n个作为候选
+    y_opt, X_opt, X_worst = select_optimal(y_cand, X_cand; p) # Optimal: 精英点
+
+    best_x_iters = zeros(Float64, n_param, maxn) # 每次，只保存了一个最优
+    best_fvals_p = zeros(Float64, maxn, p)       # 每次，保存了前p个精英
 
     neps = eps
     X1 = zeros(Float64, n_param, n_pop_out)
@@ -64,6 +66,7 @@ function SRS(
     _fevals_loops = Float64[] # 每次loop的最优值
     inner_search_started = false
     loop = 0
+    num_iter = 0
 
     # 主循环
     while true
@@ -71,9 +74,9 @@ function SRS(
         current_loop_min = inner_search_started ? loop_min : init_loop_min
         search_init_X!(X1, X_opt, X_worst, p, n_pop_out, λ, Mbounds, LB, UB)
 
-        y = Vector{Float64}(undef, n_pop_out)
-        num_call = calculate_goal!(y, fun, X1, num_call)
-        update_best_theta!(y_opt, X_opt, X_worst, y, X1, p) # update yps, Xp, Xb
+        y_cand = Vector{Float64}(undef, n_pop_out)
+        num_call = calculate_goal!(y_cand, fn, X1, num_call)
+        update_best_theta!(y_opt, X_opt, X_worst, y_cand, X1, p) # update yps, Xp, Xb
 
         num_iter += 1
         loop += 1
@@ -108,15 +111,15 @@ function SRS(
                 Xp1 = X_opt[:, indexX[1:po]]
 
                 BestX = copy(Xp1)
-                x = zeros(n_param, search_size * po)
+                X_cand = zeros(n_param, search_size * po)
 
                 BestY = zeros(Float64, n_param + 1, p1)
                 BestY[1, :] .= y_opt[1:p1]
 
                 BX = best_x_iters[:, num_iter]
 
-                num_call, Index1 = perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, search_steps, search_param_sizes,
-                    p1, search_size, fun, num_call)
+                num_call, Index1 = perform_inner_search!(X_cand, Xp1, BestX, BestY, BX, lower, upper, search_steps, search_param_sizes,
+                    p1, search_size, fn, num_call)
 
                 num_iter += 1
                 best_fvals_p[num_iter, 1:p1] .= nanminimum(BestY[Index1-n_param:Index1, :], dims=1)'
@@ -131,25 +134,25 @@ function SRS(
                 X_opt[:, 1:p1] .= BestX # 
                 update_bounds_and_steps!(X_opt, lower, upper, Mbounds, lb, ub,
                     search_steps, search_param_sizes; mode=:shrink, delta=delta, update_Mbounds=false)
-                perform_secondary_search!(x, X_opt, X_worst, lower, upper, search_size, p1)
+                perform_secondary_search!(X_cand, X_opt, X_worst, lower, upper, search_size, p1)
 
                 # 生成随机数 N
                 N = (ub .- lb) .* rand(n_param, search_size * p1) .+ lb
-                x[x.<lb] .= N[x.<lb]
-                x[x.>ub] .= N[x.>ub]
+                X_cand[X_cand.<lb] .= N[X_cand.<lb]
+                X_cand[X_cand.>ub] .= N[X_cand.>ub]
 
                 # 计算 y
-                MM = search_size * p1
-                y = Vector{Float64}(undef, MM)
-                num_call = calculate_goal!(y, fun, x, num_call)
+                n_cand = search_size * p1
+                y_cand = Vector{Float64}(undef, n_cand)
+                num_call = calculate_goal!(y_cand, fn, X_cand, num_call)
 
                 # 更新 yps 和 x
                 y_opt[1:p1] .= nanminimum(BestY, dims=1)'
-                y = vcat(y, y_opt)
-                x = hcat(x, X_opt)
+                y_cand = vcat(y_cand, y_opt)
+                X_cand = hcat(X_cand, X_opt)
 
                 # 对 yps 排序并更新
-                y_opt, indexY = sort(y), sortperm(y)
+                y_opt, indexY = sort(y_cand), sortperm(y_cand)
                 y_opt = y_opt[1:p]
                 xneed = abs(y_opt[1] - best_feval_iters[num_iter])
 
@@ -159,8 +162,8 @@ function SRS(
                     eps += 1
                 end
 
-                X_opt = x[:, indexY[1:p]]
-                X_worst = x[:, indexY[end]]
+                X_opt = X_cand[:, indexY[1:p]]
+                X_worst = X_cand[:, indexY[end]]
                 hit_upper_bound = falses(n_param)
                 hit_lower_bound = falses(n_param)
                 _ub = copy(ub)

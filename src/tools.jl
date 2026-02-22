@@ -1,6 +1,6 @@
 # y是修改地址，无需返回
 function calculate_goal!(Y::Vector{Float64}, f::Function, X::Matrix{Float64},
-    num_call::Int)
+    num_call::Int = 0)
 
     N = size(X, 2)
     @inbounds @threads for i in 1:N
@@ -134,8 +134,8 @@ function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, search
 
     Index1 = 1
 
-    MM = search_size * p1
-    y = Vector{Float64}(undef, MM)
+    n_cand = search_size * p1
+    y = Vector{Float64}(undef, n_cand)
 
     for i = 1:npar
         for j = 1:p1
