@@ -13,7 +13,7 @@ function SRS(
     f_atol::Float64=1e-5,
     eps::Int=4,               # 进入/维持某些全局跳出逻辑
     update_eps::Bool=true,
-    λ_short::Float64=0.02, λ_long::Float64=0.2,
+    λ_short::Float64=0.02, λ_long::Float64=0.2, # 洗牌强度 决定收敛速度
     init_loop_min::Int=3, loop_min::Int=2,
     kw...)
 
@@ -24,8 +24,7 @@ function SRS(
 
     # 初始化参数
     n_param = length(lower)
-    n_ensemble = 3 * n_param + 3
-    n_pop_out = n_ensemble * p       # 总参数，每次循环，总参数个数
+    n_ensemble = 3(n_param + 1)      # 内部已写死，这里无意义
 
     search_size = Int(nanmax(floor(Int, n_ensemble * p / po) + 1, 9))
     search_param_sizes = search_size * ones(Int, n_param, 1) # n_param x 1, 每个参数维度的采样点数
@@ -36,8 +35,6 @@ function SRS(
     M = upper .- lower
     ub = copy(upper)
     lb = copy(lower)
-    LB = repeat(lb, 1, n_ensemble)
-    UB = repeat(ub, 1, n_ensemble)
 
     search_steps = M ./ (search_param_sizes .- 1) # n_param x 1, 与 search_param_sizes 同维度
 
@@ -56,12 +53,12 @@ function SRS(
     x_calls = []
 
     x_iters = zeros(Float64, n_param, maxn)   # 每次，只保存了一个最优
-
     _yp = zeros(Float64, n_param + 1, p1)     # 
 
     # 外部搜索一次
-    X_cand_out = zeros(Float64, n_param, n_pop_out)
-    y_cand_out = Vector{Float64}(undef, n_pop_out)
+    n_out = 3 * (n_param + 1) * p
+    X_cand_out = zeros(Float64, n_param, n_out)
+    y_cand_out = Vector{Float64}(undef, n_out)
 
     inner_search_started = false
     loop = 0
@@ -73,10 +70,10 @@ function SRS(
     # 主循环
     while num_call < maxn
         loop += 1
+        current_loop_min = inner_search_started ? loop_min : init_loop_min
 
         λ = (eps > neps + 2) ? λ_short : λ_long
-        current_loop_min = inner_search_started ? loop_min : init_loop_min
-        search_init_X!(X_cand_out, X_opt, X_worst, p, n_pop_out, λ, Mbounds, LB, UB)
+        shuffle_cand!(X_cand_out, X_opt, X_worst, Mbounds, lb, ub; p, λ) # 洗牌
 
         num_call = calculate_goal!(y_cand_out, fn, X_cand_out, num_call)
         num_iter += 1
@@ -84,9 +81,10 @@ function SRS(
         update_optimal!(y_opt, X_opt, X_worst, y_cand_out, X_cand_out, p) # update yps, Xp, Xb
 
         i_opt = sortperm(y_opt)
-        y_opt = @view y_opt[i_opt]
-        # X_opt = @view X_opt[:, i_opt] # 不能排序，因为后续要根据位置更新边界
-        x_iter = X_opt[:, i_opt[1]]
+        y_opt = y_opt[i_opt]
+        # X_opt = X_opt[:, i_opt] # 不能排序，因为后续要根据位置更新边界
+
+        x_iter = X_opt[:, 1]
         x_iters[:, num_iter] = x_iter
 
         feval = nanminimum(y_opt)
@@ -119,7 +117,6 @@ function SRS(
             num_call, Index1 = perform_inner_search!(X_cand, Xp1, BestX, _yp, x_iter, lower, upper,
                 search_steps, search_param_sizes, search_size, p1, fn, num_call)
             num_iter += 1
-
             fevals_p = nanminimum(_yp[Index1-n_param:Index1, :], dims=1)[:]
             x_iters[:, num_iter] = x_iter
 
@@ -158,6 +155,5 @@ function SRS(
         end
         push!(fevals_loops, feval) # _fevals_loop[loop] = feval
     end
-
     return OptimOutput(feval_calls, x_calls, feval_iters, x_iters, num_call, num_iter; verbose)
 end

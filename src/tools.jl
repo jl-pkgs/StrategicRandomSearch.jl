@@ -34,26 +34,31 @@ end
 
 
 # 执行外层搜索迭代
-function search_init_X!(X, X_best, X_worst, p, n_reps, lambda, Mbounds, LB, UB)
+# X_cand_out: [n_param, 3(n_param + 1) * p]，每次迭代生成的候选解
+function shuffle_cand!(X_cand_out, X_opt, X_worst, Mbounds, lb, ub; p::Int, λ::Float64)
+    n_ensemble = 3 * (length(lb) + 1) # 内部已写死
+    LB = repeat(lb, 1, n_ensemble) # [n_param, n_ensemble]
+    UB = repeat(ub, 1, n_ensemble)
+
     n_param = length(Mbounds)
-    lam_Mbounds = lambda * Mbounds
-    lam_Mbounds_IN = lambda * Mbounds .* Diagonal(ones(n_param))
+    lam_Mbounds = λ * Mbounds # 洗牌强度
+    lam_Mbounds_IN = λ * Mbounds .* Diagonal(ones(n_param))
 
     for i in 1:p
         r1 = 2 .* rand(Bool, n_param, n_param) .- 1
-        XPi = repeat(X_best[:, i], 1, n_param)
+        XPi = repeat(X_opt[:, i], 1, n_param)
 
         xx1 = XPi .+ lam_Mbounds_IN    # n_param
         xx2 = XPi .- lam_Mbounds_IN    # n_param 
         xx3 = XPi .- lam_Mbounds .* r1 # n_param
 
-        xb1 = (X_best[:, i] .+ X_worst) ./ 2 # 1
-        xb2 = 2 * X_worst .- X_best[:, i]    # 1
-        xb3 = 2 * X_best[:, i] .- X_worst    # 1
+        xb1 = (X_opt[:, i] .+ X_worst) ./ 2 # 1
+        xb2 = 2 * X_worst .- X_opt[:, i]    # 1
+        xb3 = 2 * X_opt[:, i] .- X_worst    # 1
 
-        xx = hcat(xx1, xx2, xb1, xb2, xb3, xx3) # [3npar + 3, ]
+        xx = hcat(xx1, xx2, xb1, xb2, xb3, xx3) # [n_param, 3npar + 3]
         xx .= clamp.(xx, LB, UB)
-        X[:, i:p:n_reps] .= xx
+        X_cand_out[:, i:p:end] .= xx
     end
 end
 

@@ -21,7 +21,7 @@ end
     lower = Float64.([-2, -2])
     upper = Float64.([2, 2])
     x0 = Float64.([1, 1])
-    @time r = SRS(functn1, lower, upper; seed=1)
+    @time r = SRS(functn1, lower, upper; seed=1, maxn=1000)
     @test isapprox(r.x, [0.0, -1.0], atol=1e-6)
     @test isapprox(r.feval, 3, atol=1e-6)
 end
