@@ -112,8 +112,7 @@ function SRS(
             Xp1 = X_opt[:, i_opt[1:po]]
 
             BestX = copy(Xp1)
-            X_cand = zeros(n_param, search_size * po)
-
+            X_cand .= 0.0
             _X = x_iters[:, num_iter]
             _yp .= 0.0
             _yp[1, :] .= y_opt[1:p1]
@@ -142,15 +141,13 @@ function SRS(
             X_cand[X_cand.>ub] .= N[X_cand.>ub]
 
             n_cand = search_size * p1
-            y_cand = Vector{Float64}(undef, n_cand)
             num_call = calculate_goal!(y_cand, fn, X_cand, num_call)
 
             # 更新 yps 和 x
             y_opt[1:p1] .= nanminimum(_yp, dims=1)'
-            y_cand = vcat(y_cand, y_opt)
-            X_cand = hcat(X_cand, X_opt)
-
-            y_opt, X_opt, X_worst = select_optimal(y_cand, X_cand; p) # second update opt
+            _y_cand = vcat(y_cand, y_opt)
+            _X_cand = hcat(X_cand, X_opt)
+            y_opt, X_opt, X_worst = select_optimal(_y_cand, _X_cand; p) # second update opt
 
             adjust_bounds_for_hits!(X_opt, lower, upper, lb, ub; search_steps, p)
             # push_best_history!(feval_calls, x_calls, fevals_iters_p, x_iters, num_iter)
