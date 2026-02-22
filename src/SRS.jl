@@ -20,7 +20,6 @@ function SRS(
     Random.seed!(seed) # make the result reproducible
     fn(x) = f(x, args...; kw...)
 
-    f_opt::Float64 = NaN
     p1 = po
 
     # 初始化参数
@@ -69,6 +68,9 @@ function SRS(
     loop = 0
     num_iter = 0
 
+    ineed = NaN
+    f_opt = NaN
+
     # 主循环
     while num_call < maxn
         loop += 1
@@ -94,70 +96,70 @@ function SRS(
         verbose && @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, feval)
 
         (num_call > maxn) && break
-        
+
         if loop > current_loop_min
             f_opt = fevals_loops[loop-current_loop_min] # 不能是邻近的
             # isapprox(f_opt, feval; atol=f_atol) && break # _f_best收敛
-            # abs(nanminimum(log10.(Mbounds ./ M))) > deps # M收缩过多
             ineed = abs(nanminimum(feval_iters[num_iter-current_loop_min+1]) - nanminimum(feval_iters[num_iter]))
+        end
 
-            if abs(log10(nanmax(ineed, 10.0^(-eps - 1)))) ≥ eps
-                inner_search_started = true
+        if (loop > current_loop_min) && abs(log10(nanmax(ineed, 10.0^(-eps - 1)))) ≥ eps
+            # abs(nanminimum(log10.(Mbounds ./ M))) > deps # M收缩过多
+            inner_search_started = true
 
-                update_bounds_and_steps!(X_opt, lower, upper, Mbounds, lb, ub,
-                    search_steps, search_param_sizes; mode=:expand)
-                Xp1 = X_opt[:, i_opt[1:po]]
+            update_bounds_and_steps!(X_opt, lower, upper, Mbounds, lb, ub,
+                search_steps, search_param_sizes; mode=:expand)
+            Xp1 = X_opt[:, i_opt[1:po]]
 
-                BestX = copy(Xp1)
-                X_cand = zeros(n_param, search_size * po)
+            BestX = copy(Xp1)
+            X_cand = zeros(n_param, search_size * po)
 
-                _X = x_iters[:, num_iter]
-                _yp .= 0.0
-                _yp[1, :] .= y_opt[1:p1]
+            _X = x_iters[:, num_iter]
+            _yp .= 0.0
+            _yp[1, :] .= y_opt[1:p1]
 
-                num_call, Index1 = perform_inner_search!(X_cand, Xp1, BestX, _yp, _X, lower, upper,
-                    search_steps, search_param_sizes, search_size, p1, fn, num_call)
-                num_iter += 1
+            num_call, Index1 = perform_inner_search!(X_cand, Xp1, BestX, _yp, _X, lower, upper,
+                search_steps, search_param_sizes, search_size, p1, fn, num_call)
+            num_iter += 1
 
-                fevals_iters_p[num_iter, 1:p1] .= nanminimum(_yp[Index1-n_param:Index1, :], dims=1)'
+            fevals_iters_p[num_iter, 1:p1] .= nanminimum(_yp[Index1-n_param:Index1, :], dims=1)'
 
-                append!(feval_iters, nanminimum(fevals_iters_p[num_iter, 1:p1]))
-                x_iters[:, num_iter] = _X
-                push_best_history!(feval_calls, x_calls, fevals_iters_p, x_iters, num_iter)
+            append!(feval_iters, nanminimum(fevals_iters_p[num_iter, 1:p1]))
+            x_iters[:, num_iter] = _X
+            push_best_history!(feval_calls, x_calls, fevals_iters_p, x_iters, num_iter)
 
-                feval = nanminimum(fevals_iters_p[num_iter, 1:p1])
-                verbose && @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, feval)
+            feval = nanminimum(fevals_iters_p[num_iter, 1:p1])
+            verbose && @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, feval)
 
-                X_opt[:, 1:p1] .= BestX # 
-                update_bounds_and_steps!(X_opt, lower, upper, Mbounds, lb, ub,
-                    search_steps, search_param_sizes; mode=:shrink, delta=delta, update_Mbounds=false)
-                perform_secondary_search!(X_cand, X_opt, X_worst, lower, upper, search_size, p1)
+            X_opt[:, 1:p1] .= BestX # 
+            update_bounds_and_steps!(X_opt, lower, upper, Mbounds, lb, ub,
+                search_steps, search_param_sizes; mode=:shrink, delta=delta, update_Mbounds=false)
+            perform_secondary_search!(X_cand, X_opt, X_worst, lower, upper, search_size, p1)
 
-                # 生成随机数 N
-                N = (ub .- lb) .* rand(n_param, search_size * p1) .+ lb
-                X_cand[X_cand.<lb] .= N[X_cand.<lb]
-                X_cand[X_cand.>ub] .= N[X_cand.>ub]
+            # 生成随机数 N
+            N = (ub .- lb) .* rand(n_param, search_size * p1) .+ lb
+            X_cand[X_cand.<lb] .= N[X_cand.<lb]
+            X_cand[X_cand.>ub] .= N[X_cand.>ub]
 
-                n_cand = search_size * p1
-                y_cand = Vector{Float64}(undef, n_cand)
-                num_call = calculate_goal!(y_cand, fn, X_cand, num_call)
+            n_cand = search_size * p1
+            y_cand = Vector{Float64}(undef, n_cand)
+            num_call = calculate_goal!(y_cand, fn, X_cand, num_call)
 
-                # 更新 yps 和 x
-                y_opt[1:p1] .= nanminimum(_yp, dims=1)'
-                y_cand = vcat(y_cand, y_opt)
-                X_cand = hcat(X_cand, X_opt)
+            # 更新 yps 和 x
+            y_opt[1:p1] .= nanminimum(_yp, dims=1)'
+            y_cand = vcat(y_cand, y_opt)
+            X_cand = hcat(X_cand, X_opt)
 
-                y_opt, X_opt, X_worst = select_optimal(y_cand, X_cand; p) # second update opt
-                
-                adjust_bounds_for_hits!(X_opt, lower, upper, lb, ub; search_steps, p)
-                # push_best_history!(feval_calls, x_calls, fevals_iters_p, x_iters, num_iter)
-                
-                # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
-                # 检查是否需要更新 eps
-                xneed = abs(y_opt[1] - feval_iters[num_iter])
-                if (abs(log10(nanmax(xneed, 10.0^(-eps - 1)))) ≥ eps && update_eps)
-                    eps += 1
-                end
+            y_opt, X_opt, X_worst = select_optimal(y_cand, X_cand; p) # second update opt
+
+            adjust_bounds_for_hits!(X_opt, lower, upper, lb, ub; search_steps, p)
+            # push_best_history!(feval_calls, x_calls, fevals_iters_p, x_iters, num_iter)
+
+            # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
+            # 检查是否需要更新 eps
+            xneed = abs(y_opt[1] - feval_iters[num_iter])
+            if (abs(log10(nanmax(xneed, 10.0^(-eps - 1)))) ≥ eps && update_eps)
+                eps += 1
             end
         end
         push!(fevals_loops, feval) # _fevals_loop[loop] = feval
