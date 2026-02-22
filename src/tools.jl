@@ -114,19 +114,16 @@ end
 
 
 # 更新最优解
-function update_best_theta!(y_best, X_best, X_worst, y, x, p::Int)
+function update_optimal!(y_opt, X_opt, X_worst, y_cand, x_cand, p::Int)
     for i in 1:p
-        yp = copy(y[i:p:end])
-        yp = vcat(yp, y_best[i])
-        indexY = argmin(yp)
-        y_best[i] = copy(yp[indexY]) # update
+        yp = vcat(y_cand[i:p:end], y_opt[i])
+        xp = hcat(x_cand[:, i:p:end], X_opt[:, i])
 
-        xp = hcat(x[:, i:p:end], X_best[:, i])
-        X_best[:, i] .= xp[:, indexY] # update
+        iopt = argmin(yp)
+        y_opt[i] = yp[iopt] # update
+        X_opt[:, i] .= xp[:, iopt] # update
     end
-
-    indexYb = argmax(y)
-    X_worst .= x[:, indexYb]
+    X_worst .= x_cand[:, argmax(y_cand)]
 end
 
 # 执行内层精细搜索
