@@ -80,18 +80,19 @@ function SRS(
 
         num_call = calculate_goal!(y_cand_out, fn, X_cand_out, num_call)
         num_iter += 1
-        
+
         update_optimal!(y_opt, X_opt, X_worst, y_cand_out, X_cand_out, p) # update yps, Xp, Xb
 
         i_opt = sortperm(y_opt)
         y_opt = @view y_opt[i_opt]
+        # X_opt = @view X_opt[:, i_opt] # 不能排序，因为后续要根据位置更新边界
         x_iter = X_opt[:, i_opt[1]]
         x_iters[:, num_iter] = x_iter
 
-        push_best_history!(feval_calls, x_calls, feval_iters, y_opt, x_iter)
-
         feval = nanminimum(y_opt)
         verbose && @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, feval)
+
+        push_best_history!(feval_calls, x_calls, feval_iters, feval, x_iter)
 
         (num_call > maxn) && break
 
@@ -107,7 +108,7 @@ function SRS(
 
             update_bounds_and_steps!(X_opt, lower, upper, Mbounds, lb, ub,
                 search_steps, search_param_sizes; mode=:expand)
-            Xp1 = X_opt[:, i_opt[1:po]]
+            Xp1 = X_opt[:, i_opt[1:po]] # nobug: 从全局搜索继承
 
             BestX = copy(Xp1)
             X_cand .= 0.0
@@ -121,13 +122,13 @@ function SRS(
 
             fevals_p = nanminimum(_yp[Index1-n_param:Index1, :], dims=1)[:]
             x_iters[:, num_iter] = x_iter
-            
-            push_best_history!(feval_calls, x_calls, feval_iters, fevals_p, x_iter)
 
             feval = nanminimum(fevals_p)
             verbose && @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, feval)
 
-            X_opt[:, 1:p1] .= BestX # 
+            push_best_history!(feval_calls, x_calls, feval_iters, feval, x_iter)
+
+            X_opt[:, 1:p1] .= BestX # nobug: 选出精英，放到固定位置
             update_bounds_and_steps!(X_opt, lower, upper, Mbounds, lb, ub,
                 search_steps, search_param_sizes; mode=:shrink, delta=delta, update_Mbounds=false)
             perform_secondary_search!(X_cand, X_opt, X_worst, lower, upper, search_size, p1)

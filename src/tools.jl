@@ -25,13 +25,10 @@ end
 function push_best_history!(
     fevals_calls::Vector{Float64}, x_calls::Vector,
     feval_iters::Vector{Float64},
-    fevals_p::AbstractVector{Float64}, x_iter::AbstractVector{Float64})
-
-    val = nanminimum(fevals_p)
+    val::Float64, x_iter::AbstractVector{Float64})
 
     push!(feval_iters, val)
     push!(fevals_calls, val)
-
     push!(x_calls, copy(x_iter))
 end
 
