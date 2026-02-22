@@ -148,9 +148,7 @@ function SRS(
                 y_cand = vcat(y_cand, y_opt)
                 X_cand = hcat(X_cand, X_opt)
 
-                # 对 yps 排序并更新
-                y_opt, indexY = sort(y_cand), sortperm(y_cand)
-                y_opt = y_opt[1:p]
+                y_opt, X_opt, X_worst = select_optimal(y_cand, X_cand; p) # Optimal: 精英点
                 xneed = abs(y_opt[1] - feval_iters[num_iter])
 
                 # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
@@ -159,30 +157,12 @@ function SRS(
                     eps += 1
                 end
 
-                X_opt = X_cand[:, indexY[1:p]]
-                X_worst = X_cand[:, indexY[end]]
-                hit_upper_bound = falses(n_param)
-                hit_lower_bound = falses(n_param)
-                _ub = copy(ub)
-                _lb = copy(lb)
-
-                for i = 1:p
-                    nx = X_opt[:, i]
-                    hit_upper_bound .= hit_upper_bound .| (nx .>= ub)
-                    hit_lower_bound .= hit_lower_bound .| (nx .<= lb)
-                    _ub[hit_upper_bound] .= min.(nx[hit_upper_bound], _ub[hit_upper_bound])
-                    _lb[hit_lower_bound] .= max.(nx[hit_lower_bound], _lb[hit_lower_bound])
-                end
-
-                upper[hit_upper_bound] .= min.(_ub[hit_upper_bound] .+ search_steps[hit_upper_bound], ub[hit_upper_bound])
-                lower[hit_lower_bound] .= max.(_lb[hit_lower_bound] .- search_steps[hit_lower_bound], lb[hit_lower_bound])
-
+                adjust_bounds_for_hits!(X_opt, lower, upper, lb, ub; search_steps, p)
                 push_best_history!(feval_calls, x_calls, best_fvals_p, best_x_iters, num_iter)
             end
         end
         push!(fevals_loops, _feval) # _fevals_loop[loop] = feval
     end
 
-    return OptimOutput(feval_calls, x_calls,
-        feval_iters, best_x_iters, num_call, num_iter; verbose)
+    return OptimOutput(feval_calls, x_calls, feval_iters, best_x_iters, num_call, num_iter; verbose)
 end

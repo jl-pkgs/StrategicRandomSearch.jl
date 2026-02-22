@@ -1,6 +1,6 @@
 # y是修改地址，无需返回
 function calculate_goal!(Y::Vector{Float64}, f::Function, X::Matrix{Float64},
-    num_call::Int = 0)
+    num_call::Int=0)
 
     N = size(X, 2)
     @inbounds @threads for i in 1:N
@@ -79,6 +79,31 @@ function update_bounds_and_steps!(
 end
 
 
+function adjust_bounds_for_hits!(
+    X_opt::AbstractMatrix{T}, lower::AbstractVector{T}, upper::AbstractVector{T},
+    lb::AbstractVector{T}, ub::AbstractVector{T};
+    search_steps::AbstractVecOrMat{T}, p::Int) where {T<:AbstractFloat}
+
+    n_param = length(lower)
+    hit_upper_bound = falses(n_param)
+    hit_lower_bound = falses(n_param)
+    ub_hit = copy(ub)
+    lb_hit = copy(lb)
+    step_vec = search_steps[:]
+
+    for i = 1:p
+        x = X_opt[:, i]
+        hit_upper_bound .= hit_upper_bound .| (x .>= ub)
+        hit_lower_bound .= hit_lower_bound .| (x .<= lb)
+        ub_hit[hit_upper_bound] .= min.(x[hit_upper_bound], ub_hit[hit_upper_bound])
+        lb_hit[hit_lower_bound] .= max.(x[hit_lower_bound], lb_hit[hit_lower_bound])
+    end
+    upper[hit_upper_bound] .= min.(ub_hit[hit_upper_bound] .+ step_vec[hit_upper_bound], ub[hit_upper_bound])
+    lower[hit_lower_bound] .= max.(lb_hit[hit_lower_bound] .- step_vec[hit_lower_bound], lb[hit_lower_bound])
+    return nothing
+end
+
+
 function select_optimal(y, x; p::Int)
     inds = sortperm(y)
     y_opt = y[inds[1:p]]
@@ -103,12 +128,6 @@ function update_best_theta!(y_best, X_best, X_worst, y, x, p::Int)
     indexYb = argmax(y)
     X_worst .= x[:, indexYb]
 end
-
-# function select_optimal(y_best, X_best)
-#   i = sortperm(y_best)[1]
-#   y_best[i], X_best[:, i]
-# end
-
 
 # 执行内层精细搜索
 # not used
