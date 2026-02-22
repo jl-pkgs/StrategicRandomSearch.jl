@@ -11,23 +11,14 @@ function calculate_goal!(Y::Vector{Float64}, f::Function, X::Matrix{Float64},
 end
 
 
-# 保存迭代过程中的最优值 BstValueFE
-function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Int)
-    fs = nanminimum(@view BestValue[num_iter, :])
-    append!(BestValueFE, fs)
-end
+# 保存迭代过程中的最优值与最优参数
+function push_best_history!(
+    best_fvals_hist::Vector{Float64}, best_x_hist::Vector,
+    best_fvals::Matrix{Float64}, best_x_iters::Matrix{Float64},
+    num_iter::Int)
 
-function populate_best_value_fe!(BestValueFE::Vector{Float64}, BestValue::Matrix{Float64}, num_iter::Int, n_reps::Vector{Int})
-    # fs = nanminimum(view(BestValue, num_iter, :))
-    fs = nanminimum(@view BestValue[num_iter, :])
-    # values_to_add = fill(fs, n_reps[2])
-    append!(BestValueFE, fs)
-end
-
-# 保存迭代过程中的最优参数 EachParFE
-function populate_each_par_fe!(EachParFE::Vector, EachPar::Matrix{Float64}, num_iter::Int, n_reps::Int)
-    xs = EachPar[:, num_iter]
-    append!(EachParFE, [xs])
+    push!(best_fvals_hist, nanminimum(@view best_fvals[num_iter, :]))
+    push!(best_x_hist, copy(@view best_x_iters[:, num_iter]))
 end
 
 

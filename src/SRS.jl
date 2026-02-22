@@ -52,9 +52,9 @@ function SRS(
     y_opt, X_opt, X_worst = select_optimal(y, x; p) # Optimal: 精英点
 
     best_x_iters = zeros(Float64, n_param, maxn)
-    BestValue = zeros(Float64, maxn, p) # 前n个作为候选
-    neps = eps
+    best_fvals_p = zeros(Float64, maxn, p) # 前n个作为候选
 
+    neps = eps
     X1 = zeros(Float64, n_param, n_pop_out)
 
     best_feval_iters = Float64[]
@@ -78,7 +78,7 @@ function SRS(
         num_iter += 1
         loop += 1
 
-        BestValue[num_iter, :] .= y_opt # 这里近记录了一次表现最好的
+        best_fvals_p[num_iter, :] .= y_opt # 这里近记录了一次表现最好的
 
         indexX = sortperm(y_opt)
         sort!(y_opt)
@@ -86,10 +86,9 @@ function SRS(
         append!(best_feval_iters, nanminimum(y_opt)) # BY 记录的是 最佳
         best_x_iters[:, num_iter] = X_opt[:, indexX[1]] # 做优的一个
 
-        populate_best_value_fe!(_feval_iters, BestValue, num_iter, n_pop_out)
-        populate_each_par_fe!(_x_iters, best_x_iters, num_iter, n_pop_out)
+        push_best_history!(_feval_iters, _x_iters, best_fvals_p, best_x_iters, num_iter)
 
-        _feval = nanminimum(BestValue[num_iter, :])
+        _feval = nanminimum(best_fvals_p[num_iter, :])
         verbose && @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, _feval)
 
         if loop > current_loop_min
@@ -120,16 +119,13 @@ function SRS(
                     p1, search_size, fun, num_call)
 
                 num_iter += 1
-                BestValue[num_iter, 1:p1] .= nanminimum(BestY[Index1-n_param:Index1, :], dims=1)'
+                best_fvals_p[num_iter, 1:p1] .= nanminimum(BestY[Index1-n_param:Index1, :], dims=1)'
 
-                append!(best_feval_iters, nanminimum(BestValue[num_iter, 1:p1]))
+                append!(best_feval_iters, nanminimum(best_fvals_p[num_iter, 1:p1]))
                 best_x_iters[:, num_iter] = BX
+                push_best_history!(_feval_iters, _x_iters, best_fvals_p, best_x_iters, num_iter)
 
-                n_reps1 = search_size * p1 * n_param
-                populate_best_value_fe!(_feval_iters, BestValue, num_iter, [n_pop_out, n_reps1])
-                populate_each_par_fe!(_x_iters, best_x_iters, num_iter, n_pop_out)
-
-                _feval = nanminimum(BestValue[num_iter, 1:p1])
+                _feval = nanminimum(best_fvals_p[num_iter, 1:p1])
                 verbose && @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, _feval)
 
                 X_opt[:, 1:p1] .= BestX # 
@@ -181,9 +177,7 @@ function SRS(
                 upper[hit_upper_bound] .= min.(_ub[hit_upper_bound] .+ search_steps[hit_upper_bound], ub[hit_upper_bound])
                 lower[hit_lower_bound] .= max.(_lb[hit_lower_bound] .- search_steps[hit_lower_bound], lb[hit_lower_bound])
 
-                n_reps2 = search_size * p1
-                populate_best_value_fe!(_feval_iters, BestValue, num_iter, n_reps2)
-                populate_each_par_fe!(_x_iters, best_x_iters, num_iter, n_reps2)
+                push_best_history!(_feval_iters, _x_iters, best_fvals_p, best_x_iters, num_iter)
             end
         end
         push!(_fevals_loops, _feval) # _fevals_loop[loop] = feval
