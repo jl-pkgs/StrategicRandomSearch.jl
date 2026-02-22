@@ -14,27 +14,25 @@ end
 """
 保存每次迭代的最优历史（简要维度）。
 
-- `fevals_calls`    : [ncalls, 1   ], 每次call最优f值
-- `x_calls`         : [ncalls, npar], 每次call最优x
+- `fevals_calls`    : [ncalls, 1   ]，每次call最优f值
+- `x_calls`         : [ncalls, npar]，每次call最优x
 
-- `fevals_iters_p`  : [niter, p   ], 每次迭代的前p个精英f值
+- `fevals_p`        : [p, 1] 或 [p1, 1]，当前迭代精英f值
 
-- `feval_iters`     : [niter, 1   ], 每次iter最优f值
-- `x_iters`         : [niter, npar], 每次iter最优x
+- `feval_iters`     : [niter, 1   ]，每次iter最优f值
+- `x_iter`          : [npar, 1]，当前迭代最优x
 """
 function push_best_history!(
     fevals_calls::Vector{Float64}, x_calls::Vector,
-    feval_iters::Vector{Float64}, 
-    fevals_iters_p::Matrix{Float64}, x_iters::Matrix{Float64},
-    num_iter::Int)
+    feval_iters::Vector{Float64},
+    fevals_p::AbstractVector{Float64}, x_iter::AbstractVector{Float64})
 
-    ys = @view fevals_iters_p[num_iter, :]
-    val = nanminimum(ys)
+    val = nanminimum(fevals_p)
 
     push!(feval_iters, val)
     push!(fevals_calls, val)
 
-    push!(x_calls, copy(@view x_iters[:, num_iter]))
+    push!(x_calls, copy(x_iter))
 end
 
 

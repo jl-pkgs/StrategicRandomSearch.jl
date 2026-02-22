@@ -55,7 +55,6 @@ function SRS(
     feval_calls = Float64[]
     x_calls = []
 
-    fevals_iters_p = zeros(Float64, maxn, p)  # 每次，保存了前p个精英
     x_iters = zeros(Float64, n_param, maxn)   # 每次，只保存了一个最优
 
     _yp = zeros(Float64, n_param + 1, p1)     # 
@@ -80,18 +79,18 @@ function SRS(
         search_init_X!(X_cand_out, X_opt, X_worst, p, n_pop_out, λ, Mbounds, LB, UB)
 
         num_call = calculate_goal!(y_cand_out, fn, X_cand_out, num_call)
-        update_optimal!(y_opt, X_opt, X_worst, y_cand_out, X_cand_out, p) # update yps, Xp, Xb
         num_iter += 1
-
-        fevals_iters_p[num_iter, :] .= y_opt # 这里近记录了一次表现最好的
+        
+        update_optimal!(y_opt, X_opt, X_worst, y_cand_out, X_cand_out, p) # update yps, Xp, Xb
 
         i_opt = sortperm(y_opt)
         y_opt = @view y_opt[i_opt]
-        x_iters[:, num_iter] = X_opt[:, i_opt[1]] # 做优的一个
+        x_iter = X_opt[:, i_opt[1]]
+        x_iters[:, num_iter] = x_iter
 
-        push_best_history!(feval_calls, x_calls, feval_iters, fevals_iters_p, x_iters, num_iter)
+        push_best_history!(feval_calls, x_calls, feval_iters, y_opt, x_iter)
 
-        feval = nanminimum(fevals_iters_p[num_iter, :])
+        feval = nanminimum(y_opt)
         verbose && @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, feval)
 
         (num_call > maxn) && break
@@ -112,20 +111,20 @@ function SRS(
 
             BestX = copy(Xp1)
             X_cand .= 0.0
-            _X = x_iters[:, num_iter]
+            x_iter = copy(x_iter)
             _yp .= 0.0
             _yp[1, :] .= y_opt[1:p1]
 
-            num_call, Index1 = perform_inner_search!(X_cand, Xp1, BestX, _yp, _X, lower, upper,
+            num_call, Index1 = perform_inner_search!(X_cand, Xp1, BestX, _yp, x_iter, lower, upper,
                 search_steps, search_param_sizes, search_size, p1, fn, num_call)
             num_iter += 1
 
-            fevals_iters_p[num_iter, 1:p1] .= nanminimum(_yp[Index1-n_param:Index1, :], dims=1)'
-            x_iters[:, num_iter] = _X
+            fevals_p = nanminimum(_yp[Index1-n_param:Index1, :], dims=1)[:]
+            x_iters[:, num_iter] = x_iter
             
-            push_best_history!(feval_calls, x_calls, feval_iters, fevals_iters_p, x_iters, num_iter)
+            push_best_history!(feval_calls, x_calls, feval_iters, fevals_p, x_iter)
 
-            feval = nanminimum(fevals_iters_p[num_iter, 1:p1])
+            feval = nanminimum(fevals_p)
             verbose && @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, feval)
 
             X_opt[:, 1:p1] .= BestX # 
