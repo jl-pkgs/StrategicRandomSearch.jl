@@ -84,13 +84,12 @@ function SRS(
         num_iter += 1
 
         fevals_iters_p[num_iter, :] .= y_opt # 这里近记录了一次表现最好的
-        append!(feval_iters, nanminimum(y_opt)) # BY 记录的是 最佳
 
         i_opt = sortperm(y_opt)
         y_opt = @view y_opt[i_opt]
         x_iters[:, num_iter] = X_opt[:, i_opt[1]] # 做优的一个
 
-        push_best_history!(feval_calls, x_calls, fevals_iters_p, x_iters, num_iter)
+        push_best_history!(feval_calls, x_calls, feval_iters, fevals_iters_p, x_iters, num_iter)
 
         feval = nanminimum(fevals_iters_p[num_iter, :])
         verbose && @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, feval)
@@ -122,10 +121,9 @@ function SRS(
             num_iter += 1
 
             fevals_iters_p[num_iter, 1:p1] .= nanminimum(_yp[Index1-n_param:Index1, :], dims=1)'
-
-            append!(feval_iters, nanminimum(fevals_iters_p[num_iter, 1:p1]))
             x_iters[:, num_iter] = _X
-            push_best_history!(feval_calls, x_calls, fevals_iters_p, x_iters, num_iter)
+            
+            push_best_history!(feval_calls, x_calls, feval_iters, fevals_iters_p, x_iters, num_iter)
 
             feval = nanminimum(fevals_iters_p[num_iter, 1:p1])
             verbose && @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, feval)
@@ -150,7 +148,6 @@ function SRS(
             y_opt, X_opt, X_worst = select_optimal(_y_cand, _X_cand; p) # second update opt
 
             adjust_bounds_for_hits!(X_opt, lower, upper, lb, ub; search_steps, p)
-            # push_best_history!(feval_calls, x_calls, fevals_iters_p, x_iters, num_iter)
 
             # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
             # 检查是否需要更新 eps

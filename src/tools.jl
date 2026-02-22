@@ -11,14 +11,30 @@ function calculate_goal!(Y::Vector{Float64}, f::Function, X::Matrix{Float64},
 end
 
 
-# 保存迭代过程中的最优值与最优参数
+"""
+保存每次迭代的最优历史（简要维度）。
+
+- `fevals_calls`    : [ncalls, 1   ], 每次call最优f值
+- `x_calls`         : [ncalls, npar], 每次call最优x
+
+- `fevals_iters_p`  : [niter, p   ], 每次迭代的前p个精英f值
+
+- `feval_iters`     : [niter, 1   ], 每次iter最优f值
+- `x_iters`         : [niter, npar], 每次iter最优x
+"""
 function push_best_history!(
-    best_fvals_hist::Vector{Float64}, best_x_hist::Vector,
-    best_fvals::Matrix{Float64}, best_x_iters::Matrix{Float64},
+    fevals_calls::Vector{Float64}, x_calls::Vector,
+    feval_iters::Vector{Float64}, 
+    fevals_iters_p::Matrix{Float64}, x_iters::Matrix{Float64},
     num_iter::Int)
 
-    push!(best_fvals_hist, nanminimum(@view best_fvals[num_iter, :]))
-    push!(best_x_hist, copy(@view best_x_iters[:, num_iter]))
+    ys = @view fevals_iters_p[num_iter, :]
+    val = nanminimum(ys)
+
+    push!(feval_iters, val)
+    push!(fevals_calls, val)
+
+    push!(x_calls, copy(@view x_iters[:, num_iter]))
 end
 
 
