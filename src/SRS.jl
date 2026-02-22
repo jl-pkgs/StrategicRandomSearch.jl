@@ -84,7 +84,7 @@ function SRS(
         y_opt = y_opt[i_opt]
         # X_opt = X_opt[:, i_opt] # 不能排序，因为后续要根据位置更新边界
 
-        x_iter = X_opt[:, 1]
+        x_iter = X_opt[:, 1]      # [n_param], 当前迭代的最优解
         x_iters[:, num_iter] = x_iter
 
         feval = nanminimum(y_opt)
@@ -106,26 +106,26 @@ function SRS(
 
             update_bounds_and_steps!(X_opt, lower, upper, Mbounds, lb, ub,
                 search_steps, search_param_sizes; mode=:expand)
-            Xp1 = X_opt[:, i_opt[1:po]] # nobug: 从全局搜索继承
 
-            BestX = copy(Xp1)
-            X_cand .= 0.0
-            x_iter = copy(x_iter)
-            _yp .= 0.0
+            _X = X_opt[:, i_opt[1:po]]  # [n_param, po], nobug: 从全局搜索继承
+            _yp .= 0.0                  # [n_param + 1, p1]
             _yp[1, :] .= y_opt[1:p1]
 
-            num_call, Index1 = perform_inner_search!(X_cand, Xp1, BestX, _yp, x_iter, lower, upper,
+            X_cand .= 0.0               # [n_param, search_size * p1]
+            # update: x_iter
+            num_call = perform_inner_search!(X_cand, _X, _yp, x_iter, lower, upper,
                 search_steps, search_param_sizes, search_size, p1, fn, num_call)
             num_iter += 1
-            fevals_p = nanminimum(_yp[Index1-n_param:Index1, :], dims=1)[:]
+
+            feval_p = nanminimum(_yp, dims=1)[:] # [p1]
             x_iters[:, num_iter] = x_iter
 
-            feval = nanminimum(fevals_p)
+            feval = nanminimum(feval_p)
             verbose && @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, feval)
 
             push_best_history!(feval_calls, x_calls, feval_iters, feval, x_iter)
 
-            X_opt[:, 1:p1] .= BestX # nobug: 选出精英，放到固定位置
+            X_opt[:, 1:p1] .= _X # nobug: 选出精英，放到固定位置
             update_bounds_and_steps!(X_opt, lower, upper, Mbounds, lb, ub,
                 search_steps, search_param_sizes; mode=:shrink, delta=delta, update_Mbounds=false)
             perform_secondary_search!(X_cand, X_opt, X_worst, lower, upper, search_size, p1)

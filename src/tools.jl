@@ -143,14 +143,14 @@ function update_optimal!(y_opt, X_opt, X_worst, y_cand, x_cand, p::Int)
 end
 
 # 执行内层精细搜索
-function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper,
+function perform_inner_search!(X_cand, BestX, BestY, BX, lower, upper,
     search_steps, search_param_sizes, search_size, p1, fn, num_call)
 
     n_param = length(lower)
 
     max_param_grid_size = nanmaximum(search_param_sizes)
     for i in 1:p1
-        x[:, (i-1)*max_param_grid_size+1:i*max_param_grid_size] .= repeat(Xp1[:, i], 1, max_param_grid_size)
+        X_cand[:, (i-1)*max_param_grid_size+1:i*max_param_grid_size] .= repeat(BestX[:, i], 1, max_param_grid_size)
     end
 
     Pi = zeros(Int, n_param, p1)
@@ -164,8 +164,6 @@ function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper,
         LL[i, :] .= lower[i] .+ search_steps[i] .* (0:max_param_grid_size-1)
     end
 
-    Index1 = 1
-
     n_cand = search_size * p1
     y = Vector{Float64}(undef, n_cand)
 
@@ -174,44 +172,43 @@ function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper,
             # 更新 x 矩阵的部分
             _i = Pi[i, j]
             xneed = LL[_i, 1:max_param_grid_size-1] + (search_steps[_i]*rand(1, search_param_sizes[_i] - 1))[:]
-            x[_i, (j-1)*search_param_sizes[_i]+2:j*search_param_sizes[_i]] .= xneed
-            x[_i, (j-1)*search_param_sizes[_i]+1] = x[_i, 1] + search_steps[_i] * (2 * rand() - 1)
+            X_cand[_i, (j-1)*search_param_sizes[_i]+2:j*search_param_sizes[_i]] .= xneed
+            X_cand[_i, (j-1)*search_param_sizes[_i]+1] = X_cand[_i, 1] + search_steps[_i] * (2 * rand() - 1)
 
             # 处理边界情况
-            if x[_i, (j-1)*search_param_sizes[_i]+1] < lower[_i]
-                x[_i, (j-1)*search_param_sizes[_i]+1] =
+            if X_cand[_i, (j-1)*search_param_sizes[_i]+1] < lower[_i]
+                X_cand[_i, (j-1)*search_param_sizes[_i]+1] =
                     lower[_i] + search_steps[_i] * rand()
-            elseif x[_i, (j-1)*search_param_sizes[_i]+1] > upper[_i]
-                x[_i, (j-1)*search_param_sizes[_i]+1] =
+            elseif X_cand[_i, (j-1)*search_param_sizes[_i]+1] > upper[_i]
+                X_cand[_i, (j-1)*search_param_sizes[_i]+1] =
                     upper[_i] - search_steps[_i] * rand()
             end
         end
 
-        num_call = calculate_goal!(y, fn, x, num_call)
-        Index1 += 1
+        num_call = calculate_goal!(y, fn, X_cand, num_call)
 
         for j = 1:p1
             _i = Pi[i, j]
             _min, index = findmin(y[(j-1)*search_param_sizes[_i]+1:j*search_param_sizes[_i]])
-            BestY[Index1, j] = _min
+            BestY[i+1, j] = _min
 
-            x[_i, (j-1)*search_param_sizes[_i]+1:j*search_param_sizes[_i]] .=
-                x[_i, (j-1)*search_param_sizes[_i]+index] * ones(Float64, max_param_grid_size)
+            X_cand[_i, (j-1)*search_param_sizes[_i]+1:j*search_param_sizes[_i]] .=
+                X_cand[_i, (j-1)*search_param_sizes[_i]+index] * ones(Float64, max_param_grid_size)
 
-            if _min == nanminimum(BestY[1:Index1, j])
-                BestX[:, j] .= x[:, (j-1)*search_param_sizes[_i]+index]
+            if _min == nanminimum(BestY[1:i+1, j])
+                BestX[:, j] .= X_cand[:, (j-1)*search_param_sizes[_i]+index]
             end
-            if _min == nanminimum([nanminimum(BestY[1:Index1-1, :]), nanminimum(BestY[Index1, 1:j])])
-                BX .= x[:, (j-1)*search_param_sizes[_i]+index]
+            if _min == nanminimum([nanminimum(BestY[1:i, :]), nanminimum(BestY[i+1, 1:j])])
+                BX .= X_cand[:, (j-1)*search_param_sizes[_i]+index]
             end
         end
     end
-    return num_call, Index1
+    return num_call
 end
 
 
 # 执行二次搜索
-function perform_secondary_search!(x, X_best, X_worst, lower, upper, search_block_size::Int, p1::Int)
+function perform_secondary_search!(X_cand, X_best, X_worst, lower, upper, search_block_size::Int, p1::Int)
     n_param = length(lower)
     pp = search_block_size
 
@@ -228,18 +225,18 @@ function perform_secondary_search!(x, X_best, X_worst, lower, upper, search_bloc
         xxx = randn(n_param, pp - 9) .* xx
 
         # 更新 x 数组的某些列
-        x[:, (j-1)*pp+1:j*pp-9] .= repeat(X_best[:, j], 1, pp - 9) .+ xxx
+        X_cand[:, (j-1)*pp+1:j*pp-9] .= repeat(X_best[:, j], 1, pp - 9) .+ xxx
 
-        x[:, j*pp-8] .= X_best[:, ra1[3]] .- X_best[:, ra1[1]] .+ X_best[:, ra1[2]]
-        x[:, j*pp-7] .= (2 * X_best[:, ra1[1]] .- X_best[:, ra1[3]] .- X_best[:, ra1[2]]) / 2
+        X_cand[:, j*pp-8] .= X_best[:, ra1[3]] .- X_best[:, ra1[1]] .+ X_best[:, ra1[2]]
+        X_cand[:, j*pp-7] .= (2 * X_best[:, ra1[1]] .- X_best[:, ra1[3]] .- X_best[:, ra1[2]]) / 2
 
-        x[:, j*pp-6] .= X_worst .- (X_best[:, ra[2]] .+ X_best[:, ra[1]]) / 2
-        x[:, j*pp-5] .= X_best[:, ra[2]] .- X_worst .+ X_best[:, ra[1]]
-        x[:, j*pp-4] .= x[:, j*pp-5] .- (X_best[:, ra[2]] .- 2 * X_worst .+ X_best[:, ra[1]]) / 2
-        x[:, j*pp-3] .= X_worst .+ (X_best[:, ra[2]] .- 2 * X_worst .+ X_best[:, ra[1]]) / 4
+        X_cand[:, j*pp-6] .= X_worst .- (X_best[:, ra[2]] .+ X_best[:, ra[1]]) / 2
+        X_cand[:, j*pp-5] .= X_best[:, ra[2]] .- X_worst .+ X_best[:, ra[1]]
+        X_cand[:, j*pp-4] .= X_cand[:, j*pp-5] .- (X_best[:, ra[2]] .- 2 * X_worst .+ X_best[:, ra[1]]) / 2
+        X_cand[:, j*pp-3] .= X_worst .+ (X_best[:, ra[2]] .- 2 * X_worst .+ X_best[:, ra[1]]) / 4
 
-        x[:, j*pp-2] .= (X_best[:, j] .+ X_worst) / 2
-        x[:, j*pp-1] .= 2 * X_worst .- X_best[:, j]
-        x[:, j*pp-0] .= 2 * X_best[:, j] .- X_worst
+        X_cand[:, j*pp-2] .= (X_best[:, j] .+ X_worst) / 2
+        X_cand[:, j*pp-1] .= 2 * X_worst .- X_best[:, j]
+        X_cand[:, j*pp-0] .= 2 * X_best[:, j] .- X_worst
     end
 end
