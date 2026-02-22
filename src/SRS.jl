@@ -93,8 +93,9 @@ function SRS(
         feval = nanminimum(fevals_iters_p[num_iter, :])
         verbose && @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, feval)
 
+        (num_call > maxn) && break
+        
         if loop > current_loop_min
-            (num_call > maxn) && break
             f_opt = fevals_loops[loop-current_loop_min] # 不能是邻近的
             # isapprox(f_opt, feval; atol=f_atol) && break # _f_best收敛
             # abs(nanminimum(log10.(Mbounds ./ M))) > deps # M收缩过多
@@ -114,7 +115,7 @@ function SRS(
                 _yp .= 0.0
                 _yp[1, :] .= y_opt[1:p1]
 
-                num_call, Index1 = perform_inner_search!(X_cand, Xp1, BestX, _yp, _X, lower, upper, 
+                num_call, Index1 = perform_inner_search!(X_cand, Xp1, BestX, _yp, _X, lower, upper,
                     search_steps, search_param_sizes, search_size, p1, fn, num_call)
                 num_iter += 1
 
@@ -147,16 +148,16 @@ function SRS(
                 X_cand = hcat(X_cand, X_opt)
 
                 y_opt, X_opt, X_worst = select_optimal(y_cand, X_cand; p) # second update opt
-
+                
+                adjust_bounds_for_hits!(X_opt, lower, upper, lb, ub; search_steps, p)
+                # push_best_history!(feval_calls, x_calls, fevals_iters_p, x_iters, num_iter)
+                
                 # 率定水文模型不开这个部分（因为水文模型要求精度不高，打开会使前面的等距搜索太慢了）
                 # 检查是否需要更新 eps
                 xneed = abs(y_opt[1] - feval_iters[num_iter])
                 if (abs(log10(nanmax(xneed, 10.0^(-eps - 1)))) ≥ eps && update_eps)
                     eps += 1
                 end
-
-                adjust_bounds_for_hits!(X_opt, lower, upper, lb, ub; search_steps, p)
-                push_best_history!(feval_calls, x_calls, fevals_iters_p, x_iters, num_iter)
             end
         end
         push!(fevals_loops, feval) # _fevals_loop[loop] = feval

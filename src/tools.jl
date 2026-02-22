@@ -24,17 +24,17 @@ end
 
 # 执行外层搜索迭代
 function search_init_X!(X, X_best, X_worst, p, n_reps, lambda, Mbounds, LB, UB)
-    npar = length(Mbounds)
+    n_param = length(Mbounds)
     lam_Mbounds = lambda * Mbounds
-    lam_Mbounds_IN = lambda * Mbounds .* Diagonal(ones(npar))
+    lam_Mbounds_IN = lambda * Mbounds .* Diagonal(ones(n_param))
 
     for i in 1:p
-        r1 = 2 .* rand(Bool, npar, npar) .- 1
-        XPi = repeat(X_best[:, i], 1, npar)
+        r1 = 2 .* rand(Bool, n_param, n_param) .- 1
+        XPi = repeat(X_best[:, i], 1, n_param)
 
-        xx1 = XPi .+ lam_Mbounds_IN    # npar
-        xx2 = XPi .- lam_Mbounds_IN    # npar 
-        xx3 = XPi .- lam_Mbounds .* r1 # npar
+        xx1 = XPi .+ lam_Mbounds_IN    # n_param
+        xx2 = XPi .- lam_Mbounds_IN    # n_param 
+        xx3 = XPi .- lam_Mbounds .* r1 # n_param
 
         xb1 = (X_best[:, i] .+ X_worst) ./ 2 # 1
         xb2 = 2 * X_worst .- X_best[:, i]    # 1
@@ -127,26 +127,24 @@ function update_optimal!(y_opt, X_opt, X_worst, y_cand, x_cand, p::Int)
 end
 
 # 执行内层精细搜索
-# not used
-# num_call, Index1 = perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper, k, param_grid_sizes, p1, search_block_size, fun)
 function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper,
     search_steps, search_param_sizes, search_size, p1, fn, num_call)
 
-    npar = length(lower)
+    n_param = length(lower)
 
     max_param_grid_size = nanmaximum(search_param_sizes)
     for i in 1:p1
         x[:, (i-1)*max_param_grid_size+1:i*max_param_grid_size] .= repeat(Xp1[:, i], 1, max_param_grid_size)
     end
 
-    Pi = zeros(Int, npar, p1)
-    LL = zeros(Float64, npar, max_param_grid_size)
+    Pi = zeros(Int, n_param, p1)
+    LL = zeros(Float64, n_param, max_param_grid_size)
 
     for i = 1:p1
-        Pi[:, i] .= randperm(npar)
+        Pi[:, i] .= randperm(n_param)
     end
 
-    for i in 1:npar
+    for i in 1:n_param
         LL[i, :] .= lower[i] .+ search_steps[i] .* (0:max_param_grid_size-1)
     end
 
@@ -155,7 +153,7 @@ function perform_inner_search!(x, Xp1, BestX, BestY, BX, lower, upper,
     n_cand = search_size * p1
     y = Vector{Float64}(undef, n_cand)
 
-    for i = 1:npar
+    for i = 1:n_param
         for j = 1:p1
             # 更新 x 矩阵的部分
             _i = Pi[i, j]
@@ -198,7 +196,7 @@ end
 
 # 执行二次搜索
 function perform_secondary_search!(x, X_best, X_worst, lower, upper, search_block_size::Int, p1::Int)
-    npar = length(lower)
+    n_param = length(lower)
     pp = search_block_size
 
     for j = 1:p1
@@ -211,7 +209,7 @@ function perform_secondary_search!(x, X_best, X_worst, lower, upper, search_bloc
         ra = j1, j2  # 计算 ra 数组
 
         xx = min.(X_best[:, j] .- lower, upper .- X_best[:, j]) ./ 4
-        xxx = randn(npar, pp - 9) .* xx
+        xxx = randn(n_param, pp - 9) .* xx
 
         # 更新 x 数组的某些列
         x[:, (j-1)*pp+1:j*pp-9] .= repeat(X_best[:, j], 1, pp - 9) .+ xxx
