@@ -33,51 +33,49 @@ x0 = Float64.([1, 1])
 
 ```julia
 ----------------------------------- 
-feval     : 3.0000000001097433
-x         : [2.92590422779071e-7, -0.9999994691368533]
-Iterations: 22
-f(x) calls: 1002
+feval     : 3.0000000000016254
+x         : [-5.2170832587254385e-8, -1.0000000634657706]
+Iterations: 19
+f(x) calls: 1047
 ----------------------------------- 
-  0.038590 seconds (10.67 k allocations: 624.922 KiB)
+  0.006796 seconds (11.26 k allocations: 611.835 KiB)
 OptimOutput
-  num_iter: Int64 22
-  num_call: Int64 1002
-  x: Array{Float64}((2,)) [2.92590422779071e-7, -0.9999994691368533]
-  feval: Float64 3.0000000001097433
-  BY: Array{Float64}((22,)) [37.96459778926425, 37.96459778926425, 37.96459778926425, 37.96459778926425, 26.841025563057322, 26.841025563057322, 21.605702566807324, 10.148481159630524, 5.8236442027222175, 3.0498664685729526  …  3.0000590042771944, 3.000032913496003, 3.000032913496003, 3.000001379924515, 3.0000004974780015, 3.000000289269808, 3.000000289269808, 3.000000022318343, 3.0000000001097433, 3.0000000001097433]
-  EachPar: Array{Float64}((22, 2)) [-0.616285424931557 -0.4649638918252177; -0.616285424931557 -0.4649638918252177; … ; 2.92590422779071e-7 -0.9999994691368533; 2.92590422779071e-7 -0.9999994691368533]
-  x_iters: Array{Float64}((27, 2)) [1.1122372527217e-311 1.112237252943e-311; 1.1122372531644e-311 1.1122372533857e-311; … ; 1.1122372637887e-311 1.11223726401e-311; 1.1122372642314e-311 1.112237264453e-311]
-  feval_iters: Array{Float64}((972,)) [37.96459778926425, 37.96459778926425, 37.96459778926425, 37.96459778926425, 37.96459778926425, 37.96459778926425, 37.96459778926425, 37.96459778926425, 37.96459778926425, 37.96459778926425  …  3.0000000001097433, 3.0000000001097433, 3.0000000001097433, 3.0000000001097433, 3.0000000001097433, 3.0000000001097433, 3.0000000001097433, 3.0000000001097433, 3.0000000001097433, 3.0000000001097433]
+  num_iter: Int64 19
+  num_call: Int64 1047
+  x: Array{Float64}((2,)) [-5.2170832587254385e-8, -1.0000000634657706]
+  feval: Float64 3.0000000000016254
+  x_iters: Array{Float64}((2, 1000)) [0.0 0.0 … 0.0 0.0; 0.0 0.0 … 0.0 0.0]
+  feval_iters: Array{Float64}((19,)) [3.0000000009185137, 3.0000000009185137, 3.0000000009185137, 3.0000000009185137, 3.000000000229428, 3.0000000000328972, 3.0000000000032916, 3.0000000000032916, 3.0000000000021387, 3.000000000001862, 3.000000000001675, 3.000000000001675, 3.000000000001629, 3.0000000000016254, 3.0000000000016254, 3.0000000000016254, 3.0000000000016254, 3.0000000000016254, 3.0000000000016254]
+  x_calls: Array{Any}((19,))
+  feval_calls: Array{Float64}((19,)) [3.0000000009185137, 3.0000000009185137, 3.0000000009185137, 3.0000000009185137, 3.000000000229428, 3.0000000000328972, 3.0000000000032916, 3.0000000000032916, 3.0000000000021387, 3.000000000001862, 3.000000000001675, 3.000000000001675, 3.000000000001629, 3.0000000000016254, 3.0000000000016254, 3.0000000000016254, 3.0000000000016254, 3.0000000000016254, 3.0000000000016254]
 ```
 
 ## Parameters
 
->和Python比有更新，加入update_eps参数，
-- `update_eps = true`: 增加精细化搜索，耗时长，适合寻找精度要求高的测试函数最优解
-- `update_eps = false`: 减小精细化搜索，耗时短，适合寻水文模型参数率定寻找最优解
+> 和 Python 版本相比，参数有调整：保留 `update_eps`，并新增 `f_atol_inner` 作为进入精细搜索的阈值。
+- `update_eps = true`: 开启逐步精细化搜索，耗时更长，适合高精度优化
+- `update_eps = false`: 降低精细化搜索强度，耗时更短，适合参数率定场景
+- `f_atol_inner`: 用于换算内部精度阶数，`n_eps = ceil(Int, -log10(f_atol_inner))`
 <!-- params参数为目标函数的其他参数 -->
 
 
 **Table 1.** SRS algorithm parameters
 
-| Name             | Type  | Default | Description                                                                                                                                                 |
-| ---------------- | ----- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `p`              | int   | 3       | p is the key parameter, and the value is generally 3-20, which needs to be given according to the specific situation                                        |
-| `deps`           | float | 12      | (0, inf), key parameter for adjusting the precision, the larger the value, the higher the precision and the longer the time                                 |
-| `delta`          | float | 0.01    | (0, 0.5), key parameter for adjusting the precision, the larger the value, the higher the precision and the longer the time                                 |
-| `Vectorization`  | bool  | false   | Whether the objective function satisfies the vectorization condition                                                                                        |
-| `num`            | int   | 1000    | if Vectorization=True: num=1000 else: num=10000 (defult).                                                                                                   |
-|                  |       | 10000   | The key parameter, representing the nanmaximum number of times the target function is called. When testing, the accuracy can be improved by increasing num. |
-| `MAX`            | bool  | true    | Whether to find the nanmaximum value of the objective function.                                                                                             |
-| `OptimalValue`   | float | None    | The optimal value of the objective function.                                                                                                                |
-| `ObjectiveLimit` | float | None    | When the optimal value is known, the algorithm terminates                                                                                                   |
-|                  |       |         | within `ObjectiveLimit` of the optimal value.                                                                                                               |
-| `eps`            | Int   | 4       | (0, +inf), it is not critical, and adjustment is not recommended.                                                                                           |
-| `update_eps`     | bool  | true    | Whether or not to update eps to do refined search parameters. Generally, it can be “false” for model parameter calibration.                                 |
-| `ShortLambda`    | float | 0.02    | (0, 0.1), not critical, and adjustment is not recommended.                                                                                                  |
-| `LongLambda`     | float | 0.2     | (0.1, 1), not critical, and adjustment is not recommended.                                                                                                  |
-| `InitialLt`      | int   | 3       | (0, 10), not critical, and adjustment is not recommended.                                                                                                   |
-| `Lt`             | int   | 2       | (0, 10), not critical, and adjustment is not recommended.                                                                                                   |
+| Name             | Type    | Default       | Description |
+| ---------------- | ------- | ------------- | ----------- |
+| `maxn`           | Int     | `1000`        | 目标函数最大调用次数。 |
+| `seed`           | Int     | `0`           | 随机种子，用于结果可复现。 |
+| `verbose`        | Bool    | `true`        | 是否打印迭代日志。 |
+| `p`              | Int     | `3`           | 外层搜索保留的精英点数量。 |
+| `po`             | Int     | `guess_po(p)` | 内层搜索使用的精英子集数量。 |
+| `delta`          | Float64 | `0.01`        | 边界收缩系数，用于局部收缩搜索区间。 |
+| `f_atol`         | Float64 | `1e-5`        | 全局收敛阈值（当前版本预留，暂未实际用于终止判断）。 |
+| `f_atol_inner`   | Float64 | `1e-4`        | 进入精细搜索的阈值；内部按 `n_eps = ceil(Int, -log10(f_atol_inner))` 转换精度阶数。 |
+| `update_eps`     | Bool    | `true`        | 是否在精细搜索阶段动态提高内部精度阶数（`n_eps`）。 |
+| `λ_short`        | Float64 | `0.02`        | 短程洗牌强度（精度提高后使用）。 |
+| `λ_long`         | Float64 | `0.2`         | 长程洗牌强度（默认全局搜索阶段使用）。 |
+| `init_min`       | Int     | `3`           | 启动内层搜索前，外层最少迭代轮数。 |
+| `loop_min_inner` | Int     | `2`           | 进入内层搜索后，触发条件检查的最小间隔轮数。 |
 
 ## References
 
