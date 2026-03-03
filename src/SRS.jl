@@ -10,11 +10,11 @@ function SRS(
     po::Int=guess_po(p),      # Fig 2a, po optimal points (yellow squares), 精英中的精英
     # deps::Int=12,           # x 空间收缩终止条件
     delta::Float64=0.01,      # 区间收缩因子, `delta_Mbounds = Mbounds * delta`
-    f_atol::Float64=1e-5,       # 终止条件：全局最优值收敛
+    f_atol::Float64=1e-5,       # 终止条件：全局最优值收敛, [not used]
     f_atol_inner::Float64=1e-4, # 低于该阈值则进入精细搜索
     update_eps::Bool=true,
     λ_short::Float64=0.02, λ_long::Float64=0.2, # 洗牌强度 决定收敛速度
-    init_loop_min::Int=3, loop_min::Int=2,
+    init_min::Int=3, loop_min_inner::Int=2,
     kw...)
 
     Random.seed!(seed) # make the result reproducible
@@ -71,7 +71,7 @@ function SRS(
     # 主循环
     while num_call < maxn
         loop += 1
-        current_loop_min = inner_search_started ? loop_min : init_loop_min
+        current_loop_min = inner_search_started ? loop_min_inner : init_min
 
         λ = (n_eps > n_eps_back + 2) ? λ_short : λ_long
         shuffle_cand!(X_cand_out, X_opt, X_worst, Mbounds, lb, ub; p, λ) # 洗牌
