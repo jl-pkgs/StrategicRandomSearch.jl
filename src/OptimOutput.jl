@@ -7,7 +7,7 @@
     feval::Float64 = NaN
 
     # 历史记录
-    x_iters::Matrix{Float64}     # EachPar, 图1b, 精英中的精英, 红色点中的最优一个
+    x_iters::Matrix{Float64}     # EachPar, 图1b, 精英中的精英, 红色点中的最优一个, deprecated
     feval_iters::Vector{Float64} # BY
 
     x_calls::Vector
@@ -27,7 +27,7 @@ function OptimOutput(
     num_call::Int, num_iter::Int; verbose::Bool=true)
 
     feval = feval_iters[num_iter]
-    x = x_iters[:, num_iter]
+    x = x_calls[num_iter]
 
     if verbose
         printstyled("----------------------------------- \n", bold=true, color=:blue)

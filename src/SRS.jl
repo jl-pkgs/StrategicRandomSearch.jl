@@ -47,7 +47,7 @@ function SRS(
 
     neps = eps
 
-    fevals_loops = Float64[] # 每次loop的最优值
+    _fevals_loops = Float64[] # 每次loop的最优值
     feval_iters = Float64[]
     feval_calls = Float64[]
     x_calls = []
@@ -84,18 +84,18 @@ function SRS(
         y_opt = y_opt[i_opt]
         # X_opt = X_opt[:, i_opt] # 不能排序，因为后续要根据位置更新边界
 
-        x_iter = X_opt[:, 1]      # [n_param], 当前迭代的最优解
-        x_iters[:, num_iter] = x_iter
+        _x_iter = X_opt[:, 1]      # [n_param], 当前迭代的最优解
+        # x_iters[:, num_iter] = _x_iter
 
-        feval = nanminimum(y_opt)
-        verbose && @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, feval)
+        _feval = nanminimum(y_opt)
+        verbose && @printf("[iter = %3d, num_call = %4d] out: goal = %f\n", num_iter, num_call, _feval)
 
-        push_best_history!(feval_calls, x_calls, feval_iters, feval, x_iter)
+        push_best_history!(feval_calls, x_calls, feval_iters, _feval, _x_iter)
 
         (num_call > maxn) && break
 
         if loop > current_loop_min
-            f_opt = fevals_loops[loop-current_loop_min] # 不能是邻近的
+            f_opt = _fevals_loops[loop-current_loop_min] # 不能是邻近的
             # isapprox(f_opt, feval; atol=f_atol) && break # _f_best收敛
             ineed = abs(nanminimum(feval_iters[num_iter-current_loop_min+1]) - nanminimum(feval_iters[num_iter]))
         end
@@ -113,17 +113,17 @@ function SRS(
 
             X_cand .= 0.0               # [n_param, search_size * p1]
             # update: x_iter
-            num_call = perform_inner_search!(X_cand, _X, _yp, x_iter, lower, upper,
+            num_call = perform_inner_search!(X_cand, _X, _yp, _x_iter, lower, upper,
                 search_steps, search_param_sizes, search_size, p1, fn, num_call)
             num_iter += 1
 
             feval_p = nanminimum(_yp, dims=1)[:] # [p1]
-            x_iters[:, num_iter] = x_iter
+            # x_iters[:, num_iter] = _x_iter
 
-            feval = nanminimum(feval_p)
-            verbose && @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, feval)
+            _feval = nanminimum(feval_p)
+            verbose && @printf("[iter = %3d, num_call = %4d]  in: goal = %f\n", num_iter, num_call, _feval)
 
-            push_best_history!(feval_calls, x_calls, feval_iters, feval, x_iter)
+            push_best_history!(feval_calls, x_calls, feval_iters, _feval, _x_iter)
 
             X_opt[:, 1:p1] .= _X # nobug: 选出精英，放到固定位置
             update_bounds_and_steps!(X_opt, lower, upper, Mbounds, lb, ub,
@@ -153,7 +153,7 @@ function SRS(
                 eps += 1
             end
         end
-        push!(fevals_loops, feval) # _fevals_loop[loop] = feval
+        push!(_fevals_loops, _feval) # _fevals_loop[loop] = feval
     end
     return OptimOutput(feval_calls, x_calls, feval_iters, x_iters, num_call, num_iter; verbose)
 end

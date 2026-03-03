@@ -18,7 +18,8 @@ end
     n = 10
     lower = -1.0 * ones(n)
     upper = 1.0 * ones(n)
-    @time result = SRS(Zakharov, lower, upper,
+    @time r = SRS(Zakharov, lower, upper,
         p=5, delta=0.3,
         maxn=Int(5e4), verbose=true)
+    @test isapprox(r.feval, 1.0, atol=1e-6)
 end
